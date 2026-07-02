@@ -1,0 +1,10 @@
+Evassistant améliore l'expérience des joueurs EVA directement depuis Chrome.
+
+Fonctionnalités :
+- Consulter les participants de vos sessions à venir.
+- Consulter les joueurs de vos dernières parties.
+- Enregistrer des favoris de réservation (centre, mode de jeu, nombre de joueurs).
+- Ouvrir un favori en un clic vers le calendrier de réservation EVA.
+
+L'extension fonctionne avec votre session EVA déjà connectée dans le navigateur.
+Aucune donnée n'est vendue à des tiers.

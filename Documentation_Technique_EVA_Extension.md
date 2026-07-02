@@ -1,4 +1,4 @@
-# Documentation technique - Extension Chrome EVA Participants
+# Documentation technique - Extension Chrome Evassistant
 
 ## Objectif
 

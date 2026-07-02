@@ -1,9 +1,10 @@
 (function () {
   const API_URL = "https://api.eva.gg/graphql";
   const EVA_APP_ORIGIN = "https://app.eva.gg";
-  const PANEL_ID = "eva-participants-panel";
-  const AUTH_REQUIRED_MESSAGE = "Connecte-toi à ton compte EVA pour utiliser l'extension.";
-  const FAVORITES_STORAGE_KEY = "eva_ext_booking_favorites_v1";
+  const PANEL_ID = "evassistant-panel";
+  const AUTH_REQUIRED_MESSAGE = "Connecte-toi à ton compte EVA pour utiliser Evassistant.";
+  const FAVORITES_STORAGE_KEY = "evassistant_booking_favorites_v1";
+  const LEGACY_FAVORITES_STORAGE_KEY = "eva_ext_booking_favorites_v1";
 
   let cachedAccessToken = null;
   let refreshAccessTokenPromise = null;
@@ -143,35 +144,35 @@
     const panel = document.createElement("div");
     panel.id = PANEL_ID;
     panel.innerHTML = `
-      <div class="eva-ext-header">
-        <strong id="eva-ext-title">Participants EVA</strong>
-        <div class="eva-ext-header-actions">
-          <button id="eva-ext-toggle" title="Réduire le panneau" aria-label="Réduire le panneau">—</button>
+      <div class="evassistant-header">
+        <strong id="evassistant-title">Evassistant</strong>
+        <div class="evassistant-header-actions">
+          <button id="evassistant-toggle" title="Réduire le panneau" aria-label="Réduire le panneau">—</button>
         </div>
       </div>
 
-      <div class="eva-ext-tabs">
-        <button class="eva-ext-tab active" data-tab="favorites">Favoris</button>
-        <button class="eva-ext-tab" data-tab="upcoming">À venir</button>
-        <button class="eva-ext-tab" data-tab="history">Historique</button>
+      <div class="evassistant-tabs">
+        <button class="evassistant-tab active" data-tab="favorites">Favoris</button>
+        <button class="evassistant-tab" data-tab="upcoming">À venir</button>
+        <button class="evassistant-tab" data-tab="history">Historique</button>
       </div>
 
-      <div id="eva-ext-content">Chargement...</div>
+      <div id="evassistant-content">Chargement...</div>
     `;
 
     document.body.appendChild(panel);
 
     document
-      .getElementById("eva-ext-toggle")
+      .getElementById("evassistant-toggle")
       .addEventListener("click", () => {
         setPanelCollapsed(!isPanelCollapsed);
       });
 
-    document.querySelectorAll(".eva-ext-tab").forEach(button => {
+    document.querySelectorAll(".evassistant-tab").forEach(button => {
       button.addEventListener("click", () => {
         activeTab = button.dataset.tab;
 
-        document.querySelectorAll(".eva-ext-tab").forEach(tab => {
+        document.querySelectorAll(".evassistant-tab").forEach(tab => {
           tab.classList.toggle("active", tab.dataset.tab === activeTab);
         });
 
@@ -180,11 +181,11 @@
     });
 
     document
-      .getElementById("eva-ext-content")
+      .getElementById("evassistant-content")
       .addEventListener("click", handleContentClick);
 
     document
-      .getElementById("eva-ext-content")
+      .getElementById("evassistant-content")
       .addEventListener("change", handleContentChange);
 
     setPanelCollapsed(false);
@@ -194,7 +195,7 @@
   function setPanelCollapsed(collapsed) {
     isPanelCollapsed = collapsed;
     const panel = document.getElementById(PANEL_ID);
-    const toggleButton = document.getElementById("eva-ext-toggle");
+    const toggleButton = document.getElementById("evassistant-toggle");
 
     if (!panel || !toggleButton) return;
 
@@ -306,7 +307,7 @@
     const tabId = await getActiveEvaTabId();
 
     return new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, { type: "eva-api-request", payload }, response => {
+      chrome.tabs.sendMessage(tabId, { type: "evassistant-api-request", payload }, response => {
         if (chrome.runtime.lastError) {
           reject(new Error(`Impossible de contacter l'onglet EVA: ${chrome.runtime.lastError.message}`));
           return;
@@ -373,18 +374,35 @@
   async function readFavorites() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       try {
-        const result = await chrome.storage.local.get(FAVORITES_STORAGE_KEY);
-        const storedFavorites = result?.[FAVORITES_STORAGE_KEY];
-        return normalizeFavorites(storedFavorites);
+        const result = await chrome.storage.local.get([
+          FAVORITES_STORAGE_KEY,
+          LEGACY_FAVORITES_STORAGE_KEY
+        ]);
+        const storedFavorites = result?.[FAVORITES_STORAGE_KEY]
+          ?? result?.[LEGACY_FAVORITES_STORAGE_KEY];
+        const favorites = normalizeFavorites(storedFavorites);
+
+        if (!result?.[FAVORITES_STORAGE_KEY] && favorites.length) {
+          await writeFavorites(favorites);
+        }
+
+        return favorites;
       } catch (_) {
         return [];
       }
     }
 
     try {
-      const rawValue = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      const rawValue = localStorage.getItem(FAVORITES_STORAGE_KEY)
+        ?? localStorage.getItem(LEGACY_FAVORITES_STORAGE_KEY);
       if (!rawValue) return [];
-      return normalizeFavorites(JSON.parse(rawValue));
+
+      const favorites = normalizeFavorites(JSON.parse(rawValue));
+      if (!localStorage.getItem(FAVORITES_STORAGE_KEY) && favorites.length) {
+        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+      }
+
+      return favorites;
     } catch (_) {
       return [];
     }
@@ -414,7 +432,7 @@
   }
 
   async function renderFavoritesTab(message = "") {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
     content.innerHTML = "Chargement des paramètres de favoris...";
 
     const [rawFavorites, locations] = await Promise.all([
@@ -440,7 +458,7 @@
 
     if (!favorites.length) {
       content.innerHTML = `
-        ${message ? `<p class="eva-ext-feedback">${escapeHtml(message)}</p>` : ""}
+        ${message ? `<p class="evassistant-feedback">${escapeHtml(message)}</p>` : ""}
         <p>Aucun favori enregistré pour le moment.</p>
         ${renderFavoriteBuilder(locations, games, seatChoices)}
       `;
@@ -448,13 +466,13 @@
     }
 
     content.innerHTML = `
-      ${message ? `<p class="eva-ext-feedback">${escapeHtml(message)}</p>` : ""}
-      <div class="eva-ext-favorites-grid">
+      ${message ? `<p class="evassistant-feedback">${escapeHtml(message)}</p>` : ""}
+      <div class="evassistant-favorites-grid">
         ${favorites.map(favorite => `
-        <section class="eva-ext-session eva-ext-favorite-card" data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}" role="button" tabindex="0" title="Ouvrir ce favori">
-          <button class="eva-ext-favorite-delete" data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}" title="Supprimer ce favori" aria-label="Supprimer ce favori">×</button>
-          <h3>${escapeHtml(favorite.label ?? "Favori EVA")}</h3>
-          <div class="eva-ext-favorite-inline-meta">
+        <section class="evassistant-session evassistant-favorite-card" data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}" role="button" tabindex="0" title="Ouvrir ce favori">
+          <button class="evassistant-favorite-delete" data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}" title="Supprimer ce favori" aria-label="Supprimer ce favori">×</button>
+          <h3>${escapeHtml(favorite.label ?? "Favori")}</h3>
+          <div class="evassistant-favorite-inline-meta">
             <span><strong>Centre:</strong> ${escapeHtml(favorite.locationName ?? favorite.locationId)}</span>
             <span><strong>Jeu:</strong> ${escapeHtml(favorite.gameName ?? favorite.gameIds)}</span>
             <span><strong>Joueurs:</strong> ${escapeHtml(favorite.seatCount)}</span>
@@ -486,9 +504,9 @@
     `).join("");
 
     return `
-      <details class="eva-ext-session eva-ext-favorite-builder">
+      <details class="evassistant-session evassistant-favorite-builder">
         <summary>Créer un favori</summary>
-        <div class="eva-ext-form-grid">
+        <div class="evassistant-form-grid">
           <label>
             Salle
             <select data-favorite-field="locationId">
@@ -517,7 +535,7 @@
             />
           </label>
         </div>
-        <div class="eva-ext-favorite-actions">
+        <div class="evassistant-favorite-actions">
           <button data-action="create-favorite-from-builder">Enregistrer</button>
         </div>
       </details>
@@ -578,7 +596,7 @@
   }
 
   async function refreshFavoriteBuilderFields() {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
     if (!content) return;
 
     const locationSelect = content.querySelector('select[data-favorite-field="locationId"]');
@@ -810,7 +828,7 @@
   }
 
   async function loadUpcomingParticipants() {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
     content.innerHTML = "Chargement des réservations à venir...";
 
     try {
@@ -863,7 +881,7 @@
   }
 
   async function loadHistoryParticipants() {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
     content.innerHTML = "Chargement complet de l'historique...";
 
     try {
@@ -1007,10 +1025,10 @@
   }
 
   function renderUpcomingSessions(sessions) {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
 
     content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="eva-ext-session">
+      <section class="evassistant-session">
         ${renderSessionHeader(booking)}
         ${renderUpcomingParticipantsTable(participants)}
       </section>
@@ -1018,10 +1036,10 @@
   }
 
   function renderHistorySessions(sessions) {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
 
     content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="eva-ext-session">
+      <section class="evassistant-session">
         ${renderSessionHeader(booking)}
         ${renderHistoryParticipantsTable(participants)}
       </section>
@@ -1036,7 +1054,7 @@
     return `
       <h3>${escapeHtml(gameName)}</h3>
 
-      <div class="eva-ext-meta">
+      <div class="evassistant-meta">
         <div><strong>Lieu :</strong> ${escapeHtml(locationName)}</div>
         <div><strong>Date :</strong> ${escapeHtml(date)}</div>
         <div><strong>Horaire :</strong> ${escapeHtml(booking.slot.startTime ?? "-")} - ${escapeHtml(booking.slot.endTime ?? "-")}</div>
@@ -1052,7 +1070,7 @@
     }
 
     return `
-      <table class="eva-ext-table">
+      <table class="evassistant-table">
         <thead>
           <tr>
             <th>#</th>
@@ -1081,7 +1099,7 @@
     }
 
     return `
-      <table class="eva-ext-table">
+      <table class="evassistant-table">
         <thead>
           <tr>
             <th>#</th>
@@ -1129,14 +1147,14 @@
   }
 
   function renderError(error) {
-    const content = document.getElementById("eva-ext-content");
+    const content = document.getElementById("evassistant-content");
 
     if (isAuthError(error?.message)) {
-      content.innerHTML = `<p class="eva-ext-auth-required">${escapeHtml(AUTH_REQUIRED_MESSAGE)}</p>`;
+      content.innerHTML = `<p class="evassistant-auth-required">${escapeHtml(AUTH_REQUIRED_MESSAGE)}</p>`;
       return;
     }
 
-    content.innerHTML = `<pre class="eva-ext-error">${escapeHtml(error.message)}</pre>`;
+    content.innerHTML = `<pre class="evassistant-error">${escapeHtml(error.message)}</pre>`;
   }
 
   function isAuthError(value) {

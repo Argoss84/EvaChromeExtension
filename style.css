@@ -5,7 +5,7 @@ body {
   background: #111;
 }
 
-#eva-participants-panel {
+#evassistant-panel {
   position: static;
   width: auto;
   min-height: 520px;
@@ -21,20 +21,20 @@ body {
   box-shadow: none;
 }
 
-.eva-ext-header {
+.evassistant-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 14px;
 }
 
-.eva-ext-header-actions {
+.evassistant-header-actions {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-#eva-ext-refresh {
+#evassistant-refresh {
   background: #2d6cdf;
   color: white;
   border: none;
@@ -44,11 +44,11 @@ body {
   font-weight: 600;
 }
 
-#eva-ext-refresh:hover {
+#evassistant-refresh:hover {
   background: #1f55b8;
 }
 
-#eva-ext-toggle {
+#evassistant-toggle {
   width: 34px;
   height: 34px;
   border: 1px solid #333;
@@ -60,18 +60,18 @@ body {
   line-height: 1;
 }
 
-#eva-ext-toggle:hover {
+#evassistant-toggle:hover {
   background: #2d6cdf;
   border-color: #2d6cdf;
 }
 
-.eva-ext-tabs {
+.evassistant-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 14px;
 }
 
-.eva-ext-tab {
+.evassistant-tab {
   flex: 1;
   background: #222;
   color: #ddd;
@@ -82,30 +82,30 @@ body {
   font-weight: 600;
 }
 
-.eva-ext-tab.active {
+.evassistant-tab.active {
   background: #2d6cdf;
   color: #fff;
   border-color: #2d6cdf;
 }
 
-.eva-ext-session {
+.evassistant-session {
   border-top: 1px solid #333;
   padding-top: 14px;
   margin-top: 14px;
 }
 
-.eva-ext-session:first-child {
+.evassistant-session:first-child {
   border-top: none;
   margin-top: 0;
   padding-top: 0;
 }
 
-.eva-ext-session h3 {
+.evassistant-session h3 {
   margin: 0 0 8px;
   font-size: 16px;
 }
 
-.eva-ext-meta {
+.evassistant-meta {
   font-size: 13px;
   color: #ccc;
   margin-bottom: 10px;
@@ -113,44 +113,44 @@ body {
   gap: 4px;
 }
 
-.eva-ext-table {
+.evassistant-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 
-.eva-ext-table th,
-.eva-ext-table td {
+.evassistant-table th,
+.evassistant-table td {
   border-bottom: 1px solid #333;
   padding: 7px;
   text-align: left;
   vertical-align: top;
 }
 
-.eva-ext-table th {
+.evassistant-table th {
   color: #aaa;
   font-weight: 600;
 }
 
-.eva-ext-error {
+.evassistant-error {
   color: #ff7777;
   white-space: pre-wrap;
   font-size: 12px;
 }
 
-.eva-ext-feedback {
+.evassistant-feedback {
   margin: 0 0 12px;
   color: #91d17f;
   font-size: 13px;
 }
 
-.eva-ext-favorite-actions {
+.evassistant-favorite-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
 }
 
-.eva-ext-favorite-actions button {
+.evassistant-favorite-actions button {
   background: #2a2a2a;
   color: #eee;
   border: 1px solid #444;
@@ -161,17 +161,17 @@ body {
   font-weight: 600;
 }
 
-.eva-ext-favorite-actions button:hover {
+.evassistant-favorite-actions button:hover {
   background: #3a3a3a;
 }
 
-.eva-ext-favorites-grid {
+.evassistant-favorites-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
 }
 
-.eva-ext-favorite-card {
+.evassistant-favorite-card {
   position: relative;
   margin-top: 0;
   padding: 10px 12px;
@@ -181,12 +181,12 @@ body {
   cursor: pointer;
 }
 
-.eva-ext-favorite-card h3 {
+.evassistant-favorite-card h3 {
   font-size: 13px;
   margin: 0 24px 8px 0;
 }
 
-.eva-ext-favorite-inline-meta {
+.evassistant-favorite-inline-meta {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
@@ -194,13 +194,13 @@ body {
   color: #cfcfcf;
 }
 
-.eva-ext-favorite-inline-meta span {
+.evassistant-favorite-inline-meta span {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.eva-ext-favorite-delete {
+.evassistant-favorite-delete {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -216,34 +216,34 @@ body {
   padding: 0;
 }
 
-.eva-ext-favorite-delete:hover {
+.evassistant-favorite-delete:hover {
   background: #5a1717;
   border-color: #a13b3b;
 }
 
-.eva-ext-favorite-builder summary {
+.evassistant-favorite-builder summary {
   cursor: pointer;
   font-weight: 700;
 }
 
-.eva-ext-favorite-builder[open] summary {
+.evassistant-favorite-builder[open] summary {
   margin-bottom: 10px;
 }
 
-.eva-ext-form-grid {
+.evassistant-form-grid {
   display: grid;
   gap: 10px;
 }
 
-.eva-ext-form-grid label {
+.evassistant-form-grid label {
   display: grid;
   gap: 6px;
   font-size: 12px;
   color: #cfcfcf;
 }
 
-.eva-ext-form-grid select,
-.eva-ext-form-grid input {
+.evassistant-form-grid select,
+.evassistant-form-grid input {
   width: 100%;
   background: #1a1a1a;
   color: #eee;
@@ -253,7 +253,7 @@ body {
   font-size: 13px;
 }
 
-#eva-participants-panel.collapsed {
+#evassistant-panel.collapsed {
   width: 52px;
   height: 52px;
   max-height: 52px;
@@ -265,18 +265,18 @@ body {
   justify-content: center;
 }
 
-#eva-participants-panel.collapsed #eva-ext-title,
-#eva-participants-panel.collapsed #eva-ext-refresh,
-#eva-participants-panel.collapsed .eva-ext-tabs,
-#eva-participants-panel.collapsed #eva-ext-content {
+#evassistant-panel.collapsed #evassistant-title,
+#evassistant-panel.collapsed #evassistant-refresh,
+#evassistant-panel.collapsed .evassistant-tabs,
+#evassistant-panel.collapsed #evassistant-content {
   display: none;
 }
 
-#eva-participants-panel.collapsed .eva-ext-header {
+#evassistant-panel.collapsed .evassistant-header {
   margin: 0;
 }
 
-#eva-participants-panel.collapsed #eva-ext-toggle {
+#evassistant-panel.collapsed #evassistant-toggle {
   width: 36px;
   height: 36px;
   border-radius: 999px;

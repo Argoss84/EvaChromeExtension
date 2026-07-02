@@ -2,7 +2,7 @@
   const API_URL = "https://api.eva.gg/graphql";
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "eva-api-request") {
+    if (message?.type !== "evassistant-api-request") {
       return false;
     }
 

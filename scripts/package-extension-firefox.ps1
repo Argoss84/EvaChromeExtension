@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "Zip-Helpers.ps1")
+
 $root = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $root "dist"
 $zipPath = Join-Path $distDir "evassistant-firefox.zip"
@@ -33,11 +35,7 @@ foreach ($size in $iconSizes) {
   Copy-Item (Join-Path $root "icons\$iconName") (Join-Path $stagingDir "icons\$iconName")
 }
 
-if (Test-Path $zipPath) {
-  Remove-Item $zipPath -Force
-}
-
-Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $zipPath -Force
+New-ExtensionZip -SourceDir $stagingDir -ZipPath $zipPath
 Remove-Item $stagingDir -Recurse -Force
 
 Write-Host "Package Firefox cree : $zipPath"

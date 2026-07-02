@@ -7,14 +7,14 @@
 
   const API_URL = "https://api.eva.gg/graphql";
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  browser.runtime.onMessage.addListener(message => {
     if (message?.type !== "evassistant-api-request") {
-      return false;
+      return undefined;
     }
 
     const { operationName, variables, query, accessToken } = message.payload ?? {};
 
-    fetch(API_URL, {
+    return fetch(API_URL, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -37,20 +37,16 @@
           json = null;
         }
 
-        sendResponse({
+        return {
           ok: response.ok,
           status: response.status,
           json
-        });
+        };
       })
-      .catch(error => {
-        sendResponse({
-          ok: false,
-          status: 0,
-          error: String(error?.message ?? error)
-        });
-      });
-
-    return true;
+      .catch(error => ({
+        ok: false,
+        status: 0,
+        error: String(error?.message ?? error)
+      }));
   });
 })();

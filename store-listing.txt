@@ -1,4 +1,4 @@
-Evassistant améliore l'expérience des joueurs EVA directement depuis Chrome.
+Evassistant améliore l'expérience des joueurs EVA directement depuis votre navigateur (Chrome ou Firefox).
 
 Fonctionnalités :
 - Consulter les participants de vos sessions à venir.

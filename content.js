@@ -307,26 +307,22 @@
     const tabId = await getActiveEvaTabId();
     await ensureBridgeInjected(tabId);
 
-    return new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, { type: "evassistant-api-request", payload }, response => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(`Impossible de contacter l'onglet EVA: ${chrome.runtime.lastError.message}`));
-          return;
-        }
+    let response;
+    try {
+      response = await browser.tabs.sendMessage(tabId, { type: "evassistant-api-request", payload });
+    } catch (error) {
+      throw new Error(`Impossible de contacter l'onglet EVA: ${error?.message ?? error}`);
+    }
 
-        if (!response) {
-          reject(new Error("Aucune reponse de l'onglet EVA."));
-          return;
-        }
+    if (!response) {
+      throw new Error("Aucune reponse de l'onglet EVA.");
+    }
 
-        if (response.error) {
-          reject(new Error(response.error));
-          return;
-        }
+    if (response.error) {
+      throw new Error(response.error);
+    }
 
-        resolve(response);
-      });
-    });
+    return response;
   }
 
   async function getActiveEvaTabId() {
@@ -334,7 +330,7 @@
       return activeEvaTabIdCache;
     }
 
-    const tabs = await chrome.tabs.query({
+    const tabs = await browser.tabs.query({
       active: true,
       currentWindow: true
     });
@@ -351,9 +347,9 @@
 
   async function ensureBridgeInjected(tabId) {
     try {
-      await chrome.scripting.executeScript({
+      await browser.scripting.executeScript({
         target: { tabId },
-        files: ["page-bridge.js"]
+        files: ["browser-polyfill.js", "page-bridge.js"]
       });
     } catch (error) {
       throw new Error(`Impossible d'initialiser Evassistant sur l'onglet EVA: ${error?.message ?? error}`);

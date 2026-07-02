@@ -412,9 +412,283 @@
     );
   }
 
+  function setContentText(element, text) {
+    element.replaceChildren(document.createTextNode(text));
+  }
+
+  function createFeedbackMessage(text) {
+    const paragraph = document.createElement("p");
+    paragraph.className = "evassistant-feedback";
+    paragraph.textContent = text;
+    return paragraph;
+  }
+
+  function createMetaSpan(label, value) {
+    const span = document.createElement("span");
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}:`;
+    span.append(strong, document.createTextNode(` ${value}`));
+    return span;
+  }
+
+  function createMetaLine(label, value) {
+    const line = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = `${label} :`;
+    line.append(strong, document.createTextNode(` ${value}`));
+    return line;
+  }
+
+  function populateSelect(selectElement, options, selectedValue, emptyLabel) {
+    selectElement.replaceChildren();
+
+    if (!options.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = emptyLabel;
+      selectElement.appendChild(option);
+      selectElement.value = "";
+      return;
+    }
+
+    for (const entry of options) {
+      const option = document.createElement("option");
+      option.value = String(entry.value);
+      option.textContent = entry.label;
+      selectElement.appendChild(option);
+    }
+
+    selectElement.value = String(selectedValue ?? options[0].value);
+  }
+
+  function createFavoriteCard(favorite) {
+    const card = document.createElement("section");
+    card.className = "evassistant-session evassistant-favorite-card";
+    card.dataset.action = "open-favorite";
+    card.dataset.favoriteId = favorite.id;
+    card.setAttribute("role", "button");
+    card.tabIndex = 0;
+    card.title = "Ouvrir ce favori";
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "evassistant-favorite-delete";
+    deleteButton.dataset.action = "delete-favorite";
+    deleteButton.dataset.favoriteId = favorite.id;
+    deleteButton.title = "Supprimer ce favori";
+    deleteButton.setAttribute("aria-label", "Supprimer ce favori");
+    deleteButton.textContent = "×";
+
+    const title = document.createElement("h3");
+    title.textContent = favorite.label ?? "Favori";
+
+    const meta = document.createElement("div");
+    meta.className = "evassistant-favorite-inline-meta";
+    meta.append(
+      createMetaSpan("Centre", favorite.locationName ?? favorite.locationId),
+      createMetaSpan("Jeu", favorite.gameName ?? favorite.gameIds),
+      createMetaSpan("Joueurs", favorite.seatCount)
+    );
+
+    card.append(deleteButton, title, meta);
+    return card;
+  }
+
+  function buildFavoriteBuilderElement(locations, games, seatChoices) {
+    const details = document.createElement("details");
+    details.className = "evassistant-session evassistant-favorite-builder";
+
+    const summary = document.createElement("summary");
+    summary.textContent = "Créer un favori";
+
+    const formGrid = document.createElement("div");
+    formGrid.className = "evassistant-form-grid";
+
+    const locationLabel = document.createElement("label");
+    locationLabel.textContent = "Salle";
+    const locationSelect = document.createElement("select");
+    locationSelect.dataset.favoriteField = "locationId";
+    populateSelect(
+      locationSelect,
+      locations.map(location => ({
+        value: location.id,
+        label: `${location.name} (${location.department ?? "-"})`
+      })),
+      favoriteBuilderState.locationId,
+      "Aucune salle"
+    );
+    locationLabel.appendChild(locationSelect);
+
+    const gameLabel = document.createElement("label");
+    gameLabel.textContent = "Jeu";
+    const gameSelect = document.createElement("select");
+    gameSelect.dataset.favoriteField = "gameId";
+    populateSelect(
+      gameSelect,
+      games.map(entry => ({
+        value: entry.game.id,
+        label: entry.game.name
+      })),
+      favoriteBuilderState.gameId,
+      "Aucun jeu"
+    );
+    gameLabel.appendChild(gameSelect);
+
+    const seatLabel = document.createElement("label");
+    seatLabel.textContent = "Joueurs";
+    const seatSelect = document.createElement("select");
+    seatSelect.dataset.favoriteField = "seatCount";
+    populateSelect(
+      seatSelect,
+      seatChoices.map(value => ({
+        value,
+        label: value
+      })),
+      favoriteBuilderState.seatCount,
+      "-"
+    );
+    seatLabel.appendChild(seatSelect);
+
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = "Nom du favori";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.dataset.favoriteField = "label";
+    nameInput.placeholder = "Ex: Aix Battle 1 joueur";
+    nameInput.value = favoriteBuilderState.label;
+    nameLabel.appendChild(nameInput);
+
+    formGrid.append(locationLabel, gameLabel, seatLabel, nameLabel);
+
+    const actions = document.createElement("div");
+    actions.className = "evassistant-favorite-actions";
+    const saveButton = document.createElement("button");
+    saveButton.dataset.action = "create-favorite-from-builder";
+    saveButton.textContent = "Enregistrer";
+    actions.appendChild(saveButton);
+
+    details.append(summary, formGrid, actions);
+    return details;
+  }
+
+  function buildSessionHeaderElement(booking) {
+    const fragment = document.createDocumentFragment();
+    const title = document.createElement("h3");
+    title.textContent = booking.game?.name ?? "Session EVA";
+
+    const meta = document.createElement("div");
+    meta.className = "evassistant-meta";
+    meta.append(
+      createMetaLine("Lieu", booking.location?.name ?? "Lieu inconnu"),
+      createMetaLine("Date", formatDate(booking.slot.localDatetime)),
+      createMetaLine(
+        "Horaire",
+        `${booking.slot.startTime ?? "-"} - ${booking.slot.endTime ?? "-"}`
+      ),
+      createMetaLine("Terrain", booking.terrainId ?? "-"),
+      createMetaLine(
+        "Places",
+        `${booking.playerCount ?? "-"} / ${booking.seatCount ?? "-"}`
+      )
+    );
+
+    fragment.append(title, meta);
+    return fragment;
+  }
+
+  function createTable(headers) {
+    const table = document.createElement("table");
+    table.className = "evassistant-table";
+
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    for (const header of headers) {
+      const th = document.createElement("th");
+      th.textContent = header;
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement("tbody");
+    table.append(thead, tbody);
+    return { table, tbody };
+  }
+
+  function buildUpcomingParticipantsTableElement(participants) {
+    if (!participants.length) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = "Aucun participant trouvé.";
+      return paragraph;
+    }
+
+    const { table, tbody } = createTable(["#", "Nom", "Niveau", "Abonnement"]);
+
+    participants.forEach((participant, index) => {
+      const row = document.createElement("tr");
+      const cells = [
+        String(index + 1),
+        participant.isAnonymous ? "Anonyme" : (participant.user?.displayName ?? "-"),
+        participant.experience?.level ?? "-",
+        participant.subscriptionPlan ?? "-"
+      ];
+
+      for (const value of cells) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+
+      tbody.appendChild(row);
+    });
+
+    return table;
+  }
+
+  function buildHistoryParticipantsTableElement(participants) {
+    if (!participants.length) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = "Aucun participant trouvé.";
+      return paragraph;
+    }
+
+    const { table, tbody } = createTable(["#", "Pseudo", "Nom complet", "Niveau", "Places"]);
+
+    participants.forEach((participant, index) => {
+      const row = document.createElement("tr");
+      const cells = [
+        String(index + 1),
+        participant.username?.displayName ?? participant.username?.username ?? "-",
+        participant.username?.fullName ?? "-",
+        participant.level ?? "-",
+        participant.paidSeatCount ?? "-"
+      ];
+
+      for (const value of cells) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+
+      tbody.appendChild(row);
+    });
+
+    return table;
+  }
+
+  function buildSessionSection(booking, participants, mode) {
+    const section = document.createElement("section");
+    section.className = "evassistant-session";
+    section.appendChild(buildSessionHeaderElement(booking));
+    section.appendChild(
+      mode === "history"
+        ? buildHistoryParticipantsTableElement(participants)
+        : buildUpcomingParticipantsTableElement(participants)
+    );
+    return section;
+  }
+
   async function renderFavoritesTab(message = "") {
     const content = document.getElementById("evassistant-content");
-    content.innerHTML = "Chargement des paramètres de favoris...";
+    setContentText(content, "Chargement des paramètres de favoris...");
 
     const [rawFavorites, locations] = await Promise.all([
       readFavorites(),
@@ -437,90 +711,26 @@
     const selectedSeatCount = pickSeatCount(seatChoices, favoriteBuilderState.seatCount);
     favoriteBuilderState.seatCount = selectedSeatCount;
 
-    if (!favorites.length) {
-      content.innerHTML = `
-        ${message ? `<p class="evassistant-feedback">${escapeHtml(message)}</p>` : ""}
-        <p>Aucun favori enregistré pour le moment.</p>
-        ${renderFavoriteBuilder(locations, games, seatChoices)}
-      `;
-      return;
+    content.replaceChildren();
+
+    if (message) {
+      content.appendChild(createFeedbackMessage(message));
     }
 
-    content.innerHTML = `
-      ${message ? `<p class="evassistant-feedback">${escapeHtml(message)}</p>` : ""}
-      <div class="evassistant-favorites-grid">
-        ${favorites.map(favorite => `
-        <section class="evassistant-session evassistant-favorite-card" data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}" role="button" tabindex="0" title="Ouvrir ce favori">
-          <button class="evassistant-favorite-delete" data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}" title="Supprimer ce favori" aria-label="Supprimer ce favori">×</button>
-          <h3>${escapeHtml(favorite.label ?? "Favori")}</h3>
-          <div class="evassistant-favorite-inline-meta">
-            <span><strong>Centre:</strong> ${escapeHtml(favorite.locationName ?? favorite.locationId)}</span>
-            <span><strong>Jeu:</strong> ${escapeHtml(favorite.gameName ?? favorite.gameIds)}</span>
-            <span><strong>Joueurs:</strong> ${escapeHtml(favorite.seatCount)}</span>
-          </div>
-        </section>
-      `).join("")}
-      </div>
-      ${renderFavoriteBuilder(locations, games, seatChoices)}
-    `;
-  }
+    if (!favorites.length) {
+      const emptyMessage = document.createElement("p");
+      emptyMessage.textContent = "Aucun favori enregistré pour le moment.";
+      content.appendChild(emptyMessage);
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "evassistant-favorites-grid";
+      for (const favorite of favorites) {
+        grid.appendChild(createFavoriteCard(favorite));
+      }
+      content.appendChild(grid);
+    }
 
-  function renderFavoriteBuilder(locations, games, seatChoices) {
-    const locationOptions = locations.map(location => `
-      <option value="${escapeHtml(location.id)}" ${String(location.id) === String(favoriteBuilderState.locationId) ? "selected" : ""}>
-        ${escapeHtml(location.name)} (${escapeHtml(location.department ?? "-")})
-      </option>
-    `).join("");
-
-    const gameOptions = games.map(entry => `
-      <option value="${escapeHtml(entry.game.id)}" ${String(entry.game.id) === String(favoriteBuilderState.gameId) ? "selected" : ""}>
-        ${escapeHtml(entry.game.name)}
-      </option>
-    `).join("");
-
-    const seatOptions = seatChoices.map(value => `
-      <option value="${escapeHtml(value)}" ${String(value) === String(favoriteBuilderState.seatCount) ? "selected" : ""}>
-        ${escapeHtml(value)}
-      </option>
-    `).join("");
-
-    return `
-      <details class="evassistant-session evassistant-favorite-builder">
-        <summary>Créer un favori</summary>
-        <div class="evassistant-form-grid">
-          <label>
-            Salle
-            <select data-favorite-field="locationId">
-              ${locationOptions || '<option value="">Aucune salle</option>'}
-            </select>
-          </label>
-          <label>
-            Jeu
-            <select data-favorite-field="gameId">
-              ${gameOptions || '<option value="">Aucun jeu</option>'}
-            </select>
-          </label>
-          <label>
-            Joueurs
-            <select data-favorite-field="seatCount">
-              ${seatOptions || '<option value="">-</option>'}
-            </select>
-          </label>
-          <label>
-            Nom du favori
-            <input
-              type="text"
-              data-favorite-field="label"
-              placeholder="Ex: Aix Battle 1 joueur"
-              value="${escapeHtml(favoriteBuilderState.label)}"
-            />
-          </label>
-        </div>
-        <div class="evassistant-favorite-actions">
-          <button data-action="create-favorite-from-builder">Enregistrer</button>
-        </div>
-      </details>
-    `;
+    content.appendChild(buildFavoriteBuilderElement(locations, games, seatChoices));
   }
 
   async function handleContentClick(event) {
@@ -617,13 +827,7 @@
   }
 
   function replaceSelectOptions(selectElement, options, selectedValue, emptyLabel) {
-    selectElement.innerHTML = options.length
-      ? options.map(option => `
-          <option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>
-        `).join("")
-      : `<option value="">${escapeHtml(emptyLabel)}</option>`;
-
-    selectElement.value = options.length ? String(selectedValue ?? options[0].value) : "";
+    populateSelect(selectElement, options, selectedValue, emptyLabel);
   }
 
   async function loadLocations() {
@@ -805,7 +1009,7 @@
 
   async function loadUpcomingParticipants() {
     const content = document.getElementById("evassistant-content");
-    content.innerHTML = "Chargement des réservations à venir...";
+    setContentText(content, "Chargement des réservations à venir...");
 
     try {
       const bookingData = await graphql(
@@ -826,11 +1030,11 @@
         .sort((a, b) => getBookingTime(a) - getBookingTime(b));
 
       if (!bookings.length) {
-        content.innerHTML = "Aucune session à venir trouvée.";
+        setContentText(content, "Aucune session à venir trouvée.");
         return;
       }
 
-      content.innerHTML = `Chargement des participants pour ${bookings.length} session(s)...`;
+      setContentText(content, `Chargement des participants pour ${bookings.length} session(s)...`);
 
       const sessions = await Promise.all(
         bookings.map(async booking => {
@@ -858,7 +1062,7 @@
 
   async function loadHistoryParticipants() {
     const content = document.getElementById("evassistant-content");
-    content.innerHTML = "Chargement complet de l'historique...";
+    setContentText(content, "Chargement complet de l'historique...");
 
     try {
       const allBookings = await loadAllHistoryBookings();
@@ -869,11 +1073,14 @@
         .slice(0, 10);
 
       if (!lastTenBookings.length) {
-        content.innerHTML = "Aucune session dans l'historique.";
+        setContentText(content, "Aucune session dans l'historique.");
         return;
       }
 
-      content.innerHTML = `Chargement des joueurs des ${lastTenBookings.length} dernières partie(s)...`;
+      setContentText(
+        content,
+        `Chargement des joueurs des ${lastTenBookings.length} dernières partie(s)...`
+      );
 
       const sessions = await Promise.all(
         lastTenBookings.map(async booking => {
@@ -1002,102 +1209,20 @@
 
   function renderUpcomingSessions(sessions) {
     const content = document.getElementById("evassistant-content");
+    content.replaceChildren();
 
-    content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="evassistant-session">
-        ${renderSessionHeader(booking)}
-        ${renderUpcomingParticipantsTable(participants)}
-      </section>
-    `).join("");
+    for (const { booking, participants } of sessions) {
+      content.appendChild(buildSessionSection(booking, participants, "upcoming"));
+    }
   }
 
   function renderHistorySessions(sessions) {
     const content = document.getElementById("evassistant-content");
+    content.replaceChildren();
 
-    content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="evassistant-session">
-        ${renderSessionHeader(booking)}
-        ${renderHistoryParticipantsTable(participants)}
-      </section>
-    `).join("");
-  }
-
-  function renderSessionHeader(booking) {
-    const date = formatDate(booking.slot.localDatetime);
-    const gameName = booking.game?.name ?? "Session EVA";
-    const locationName = booking.location?.name ?? "Lieu inconnu";
-
-    return `
-      <h3>${escapeHtml(gameName)}</h3>
-
-      <div class="evassistant-meta">
-        <div><strong>Lieu :</strong> ${escapeHtml(locationName)}</div>
-        <div><strong>Date :</strong> ${escapeHtml(date)}</div>
-        <div><strong>Horaire :</strong> ${escapeHtml(booking.slot.startTime ?? "-")} - ${escapeHtml(booking.slot.endTime ?? "-")}</div>
-        <div><strong>Terrain :</strong> ${escapeHtml(booking.terrainId ?? "-")}</div>
-        <div><strong>Places :</strong> ${escapeHtml(booking.playerCount ?? "-")} / ${escapeHtml(booking.seatCount ?? "-")}</div>
-      </div>
-    `;
-  }
-
-  function renderUpcomingParticipantsTable(participants) {
-    if (!participants.length) {
-      return `<p>Aucun participant trouvé.</p>`;
+    for (const { booking, participants } of sessions) {
+      content.appendChild(buildSessionSection(booking, participants, "history"));
     }
-
-    return `
-      <table class="evassistant-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Nom</th>
-            <th>Niveau</th>
-            <th>Abonnement</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${participants.map((p, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${p.isAnonymous ? "Anonyme" : escapeHtml(p.user?.displayName ?? "-")}</td>
-              <td>${escapeHtml(p.experience?.level ?? "-")}</td>
-              <td>${escapeHtml(p.subscriptionPlan ?? "-")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
-  }
-
-  function renderHistoryParticipantsTable(participants) {
-    if (!participants.length) {
-      return `<p>Aucun participant trouvé.</p>`;
-    }
-
-    return `
-      <table class="evassistant-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Pseudo</th>
-            <th>Nom complet</th>
-            <th>Niveau</th>
-            <th>Places</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${participants.map((p, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${escapeHtml(p.username?.displayName ?? p.username?.username ?? "-")}</td>
-              <td>${escapeHtml(p.username?.fullName ?? "-")}</td>
-              <td>${escapeHtml(p.level ?? "-")}</td>
-              <td>${escapeHtml(p.paidSeatCount ?? "-")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
   }
 
   function getBookingTime(booking) {
@@ -1124,13 +1249,20 @@
 
   function renderError(error) {
     const content = document.getElementById("evassistant-content");
+    content.replaceChildren();
 
     if (isAuthError(error?.message)) {
-      content.innerHTML = `<p class="evassistant-auth-required">${escapeHtml(AUTH_REQUIRED_MESSAGE)}</p>`;
+      const paragraph = document.createElement("p");
+      paragraph.className = "evassistant-auth-required";
+      paragraph.textContent = AUTH_REQUIRED_MESSAGE;
+      content.appendChild(paragraph);
       return;
     }
 
-    content.innerHTML = `<pre class="evassistant-error">${escapeHtml(error.message)}</pre>`;
+    const pre = document.createElement("pre");
+    pre.className = "evassistant-error";
+    pre.textContent = error.message;
+    content.appendChild(pre);
   }
 
   function isAuthError(value) {
@@ -1145,15 +1277,6 @@
       : JSON.stringify(value);
 
     return /UNAUTHENTICATED|Forbidder error|AUTH_REQUIRED_MESSAGE|401/i.test(text);
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
   }
 
   init();

@@ -1,4 +1,10 @@
 (() => {
+  if (window.__evassistantBridgeReady) {
+    return;
+  }
+
+  window.__evassistantBridgeReady = true;
+
   const API_URL = "https://api.eva.gg/graphql";
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

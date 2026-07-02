@@ -42,8 +42,8 @@
 
     <h2>3. Stockage</h2>
     <p>
-      Les favoris sont stockés localement via <code>chrome.storage.local</code> sur votre appareil.
-      Aucune base de données distante dédiée à l'extension n'est utilisée.
+      Les favoris sont stockés localement dans le navigateur (stockage de la popup de l'extension)
+      sur votre appareil. Aucune base de données distante dédiée à l'extension n'est utilisée.
     </p>
 
     <h2>4. Communications réseau</h2>
@@ -55,9 +55,8 @@
 
     <h2>5. Permissions</h2>
     <ul>
-      <li><strong>storage</strong> : enregistrer vos favoris localement ;</li>
-      <li><strong>tabs</strong> : relayer les requêtes API via un onglet EVA ouvert ;</li>
-      <li><strong>host_permissions</strong> : injecter un pont technique sur les pages EVA et appeler l'API EVA.</li>
+      <li><strong>activeTab</strong> : accéder temporairement à l'onglet EVA actif lorsque vous ouvrez Evassistant ;</li>
+      <li><strong>scripting</strong> : relayer les requêtes API via votre session EVA déjà connectée.</li>
     </ul>
 
     <h2>6. Partage des données</h2>

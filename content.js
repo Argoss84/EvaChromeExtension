@@ -305,6 +305,7 @@
 
   async function requestEvaApiFromActiveTab(payload) {
     const tabId = await getActiveEvaTabId();
+    await ensureBridgeInjected(tabId);
 
     return new Promise((resolve, reject) => {
       chrome.tabs.sendMessage(tabId, { type: "evassistant-api-request", payload }, response => {
@@ -348,6 +349,17 @@
     return activeEvaTabIdCache;
   }
 
+  async function ensureBridgeInjected(tabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["page-bridge.js"]
+      });
+    } catch (error) {
+      throw new Error(`Impossible d'initialiser Evassistant sur l'onglet EVA: ${error?.message ?? error}`);
+    }
+  }
+
   function loadCurrentTab() {
     if (activeTab === "favorites") {
       return renderFavoritesTab();
@@ -372,26 +384,6 @@
   }
 
   async function readFavorites() {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      try {
-        const result = await chrome.storage.local.get([
-          FAVORITES_STORAGE_KEY,
-          LEGACY_FAVORITES_STORAGE_KEY
-        ]);
-        const storedFavorites = result?.[FAVORITES_STORAGE_KEY]
-          ?? result?.[LEGACY_FAVORITES_STORAGE_KEY];
-        const favorites = normalizeFavorites(storedFavorites);
-
-        if (!result?.[FAVORITES_STORAGE_KEY] && favorites.length) {
-          await writeFavorites(favorites);
-        }
-
-        return favorites;
-      } catch (_) {
-        return [];
-      }
-    }
-
     try {
       const rawValue = localStorage.getItem(FAVORITES_STORAGE_KEY)
         ?? localStorage.getItem(LEGACY_FAVORITES_STORAGE_KEY);
@@ -409,13 +401,6 @@
   }
 
   async function writeFavorites(favorites) {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.set({
-        [FAVORITES_STORAGE_KEY]: favorites
-      });
-      return;
-    }
-
     localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
   }
 
@@ -812,11 +797,6 @@
   }
 
   function openUrl(url) {
-    if (typeof chrome !== "undefined" && chrome.tabs?.create) {
-      chrome.tabs.create({ url });
-      return;
-    }
-
     window.open(url, "_blank", "noopener,noreferrer");
   }
 

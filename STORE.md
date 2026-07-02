@@ -43,14 +43,14 @@ Le fichier `dist/evassistant.zip` sera généré.
 5. Ajouter au moins 1 capture d'écran (1280x800 ou 640x400 recommandé).
 6. Indiquer l'URL de `privacy-policy.html` hébergée publiquement.
 7. Déclarer les permissions :
-   - `storage` : stockage local des favoris.
-   - `tabs` : communication avec l'onglet EVA actif.
-   - `host_permissions` : accès aux pages et API EVA uniquement.
+   - `activeTab` : accès temporaire à l'onglet EVA quand l'utilisateur ouvre Evassistant.
+   - `scripting` : relayer les appels API via la session EVA connectée.
 8. Soumettre pour examen.
 
 ## Vérifications avant soumission
 
 - [ ] Extension rechargée et testée sur `app.eva.gg` avec compte connecté.
+- [ ] Evassistant ouvert depuis un onglet EVA actif (obligatoire).
 - [ ] Onglet Favoris : création, ouverture, suppression OK.
 - [ ] Onglets À venir / Historique : chargement OK.
 - [ ] Aucune erreur dans la console de la popup.

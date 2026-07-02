@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "EVA Participants",
+  "version": "1.1.0",
+  "description": "Affiche les participants des sessions EVA réservées et de l'historique.",
+  "host_permissions": [
+    "https://app.eva.gg/*",
+    "https://api.eva.gg/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://app.eva.gg/*", "https://www.eva.gg/*"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

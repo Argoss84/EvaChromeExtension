@@ -1,0 +1,178 @@
+#eva-participants-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 560px;
+  max-height: 78vh;
+  overflow: auto;
+  z-index: 999999;
+  background: #111;
+  color: #eee;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 16px;
+  font-family: Arial, sans-serif;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+}
+
+.eva-ext-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.eva-ext-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#eva-ext-refresh {
+  background: #2d6cdf;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#eva-ext-open-bookings {
+  background: #2a2a2a;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#eva-ext-open-bookings:hover {
+  background: #3a3a3a;
+}
+
+#eva-ext-refresh:hover {
+  background: #1f55b8;
+}
+
+#eva-ext-toggle {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #222;
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+#eva-ext-toggle:hover {
+  background: #2d6cdf;
+  border-color: #2d6cdf;
+}
+
+.eva-ext-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.eva-ext-tab {
+  flex: 1;
+  background: #222;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.eva-ext-tab.active {
+  background: #2d6cdf;
+  color: #fff;
+  border-color: #2d6cdf;
+}
+
+.eva-ext-session {
+  border-top: 1px solid #333;
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+.eva-ext-session:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.eva-ext-session h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.eva-ext-meta {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.eva-ext-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.eva-ext-table th,
+.eva-ext-table td {
+  border-bottom: 1px solid #333;
+  padding: 7px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.eva-ext-table th {
+  color: #aaa;
+  font-weight: 600;
+}
+
+.eva-ext-error {
+  color: #ff7777;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+#eva-participants-panel.collapsed {
+  width: 52px;
+  height: 52px;
+  max-height: 52px;
+  padding: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#eva-participants-panel.collapsed #eva-ext-title,
+#eva-participants-panel.collapsed #eva-ext-open-bookings,
+#eva-participants-panel.collapsed #eva-ext-refresh,
+#eva-participants-panel.collapsed .eva-ext-tabs,
+#eva-participants-panel.collapsed #eva-ext-content {
+  display: none;
+}
+
+#eva-participants-panel.collapsed .eva-ext-header {
+  margin: 0;
+}
+
+#eva-participants-panel.collapsed #eva-ext-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  margin: 0;
+}

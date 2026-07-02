@@ -38,20 +38,6 @@
   font-weight: 600;
 }
 
-#eva-ext-open-bookings {
-  background: #2a2a2a;
-  color: #eee;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 7px 10px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-#eva-ext-open-bookings:hover {
-  background: #3a3a3a;
-}
-
 #eva-ext-refresh:hover {
   background: #1f55b8;
 }
@@ -146,6 +132,83 @@
   font-size: 12px;
 }
 
+.eva-ext-feedback {
+  margin: 0 0 12px;
+  color: #91d17f;
+  font-size: 13px;
+}
+
+.eva-ext-favorite-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.eva-ext-favorite-actions button {
+  background: #2a2a2a;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.eva-ext-favorite-actions button:hover {
+  background: #3a3a3a;
+}
+
+.eva-ext-favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.eva-ext-favorite-card {
+  margin-top: 0;
+  padding: 12px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #171717;
+}
+
+.eva-ext-favorite-card h3 {
+  font-size: 14px;
+}
+
+.eva-ext-favorite-builder summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.eva-ext-favorite-builder[open] summary {
+  margin-bottom: 10px;
+}
+
+.eva-ext-form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.eva-ext-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #cfcfcf;
+}
+
+.eva-ext-form-grid select,
+.eva-ext-form-grid input {
+  width: 100%;
+  background: #1a1a1a;
+  color: #eee;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+}
+
 #eva-participants-panel.collapsed {
   width: 52px;
   height: 52px;
@@ -159,7 +222,6 @@
 }
 
 #eva-participants-panel.collapsed #eva-ext-title,
-#eva-participants-panel.collapsed #eva-ext-open-bookings,
 #eva-participants-panel.collapsed #eva-ext-refresh,
 #eva-participants-panel.collapsed .eva-ext-tabs,
 #eva-participants-panel.collapsed #eva-ext-content {

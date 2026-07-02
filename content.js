@@ -2,11 +2,20 @@
   const API_URL = "https://api.eva.gg/graphql";
   const PANEL_ID = "eva-participants-panel";
   const AUTH_REQUIRED_MESSAGE = "Connecte-toi à ton compte EVA pour utiliser l'extension.";
+  const FAVORITES_STORAGE_KEY = "eva_ext_booking_favorites_v1";
 
   let cachedAccessToken = null;
   let refreshAccessTokenPromise = null;
   let activeTab = "upcoming";
   let isPanelCollapsed = false;
+  let locationsCache = null;
+  const locationGamesCache = new Map();
+  const favoriteBuilderState = {
+    locationId: "",
+    gameId: "",
+    seatCount: "",
+    label: ""
+  };
 
   const REFRESH_TOKEN_QUERY = `
     mutation refreshToken {
@@ -89,6 +98,39 @@
     }
   `;
 
+  const LIST_LOCATIONS_QUERY = `
+    query listLocations($country: CountryEnum!, $sortOrder: SortOrderLocationsInput) {
+      listLocations(country: $country, sortOrder: $sortOrder) {
+        id
+        identifier
+        name
+        department
+        country
+        status
+      }
+    }
+  `;
+
+  const BOOKING_LOCATION_QUERY = `
+    query Booking($id: Int!) {
+      location(id: $id) {
+        id
+        name
+        country
+        locationGames {
+          maxSeatCount
+          game {
+            id
+            name
+            identifier
+            minPlayer
+            maxPlayer
+          }
+        }
+      }
+    }
+  `;
+
   function init() {
     createPanel();
   }
@@ -102,7 +144,6 @@
       <div class="eva-ext-header">
         <strong id="eva-ext-title">Participants EVA</strong>
         <div class="eva-ext-header-actions">
-          <button id="eva-ext-open-bookings">Bookings</button>
           <button id="eva-ext-refresh">Rafraîchir</button>
           <button id="eva-ext-toggle" title="Réduire le panneau" aria-label="Réduire le panneau">—</button>
         </div>
@@ -111,6 +152,7 @@
       <div class="eva-ext-tabs">
         <button class="eva-ext-tab active" data-tab="upcoming">À venir</button>
         <button class="eva-ext-tab" data-tab="history">Historique</button>
+        <button class="eva-ext-tab" data-tab="favorites">Favoris</button>
       </div>
 
       <div id="eva-ext-content">Clique sur rafraîchir.</div>
@@ -121,12 +163,6 @@
     document
       .getElementById("eva-ext-refresh")
       .addEventListener("click", loadCurrentTab);
-
-    document
-      .getElementById("eva-ext-open-bookings")
-      .addEventListener("click", () => {
-        location.assign(getBookingsUrl());
-      });
 
     document
       .getElementById("eva-ext-toggle")
@@ -146,13 +182,15 @@
       });
     });
 
-    setPanelCollapsed(false);
-  }
+    document
+      .getElementById("eva-ext-content")
+      .addEventListener("click", handleContentClick);
 
-  function getBookingsUrl() {
-    const localeMatch = location.pathname.match(/^\/([a-z]{2}-[A-Z]{2})(?:\/|$)/);
-    const locale = localeMatch?.[1] ?? "fr-FR";
-    return `${location.origin}/${locale}/account/bookings`;
+    document
+      .getElementById("eva-ext-content")
+      .addEventListener("change", handleContentChange);
+
+    setPanelCollapsed(false);
   }
 
   function setPanelCollapsed(collapsed) {
@@ -270,12 +308,489 @@
     return json;
   }
 
+  async function graphqlPublic(operationName, variables, query) {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "eva-client-app-name": "spa-app"
+      },
+      body: JSON.stringify({
+        operationName,
+        variables,
+        query
+      })
+    });
+
+    const json = await response.json();
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}\n${JSON.stringify(json, null, 2)}`);
+    }
+
+    if (json.errors?.length) {
+      throw new Error(JSON.stringify(json.errors, null, 2));
+    }
+
+    return json.data;
+  }
+
   function loadCurrentTab() {
+    if (activeTab === "favorites") {
+      return renderFavoritesTab();
+    }
+
     if (activeTab === "history") {
       return loadHistoryParticipants();
     }
 
     return loadUpcomingParticipants();
+  }
+
+  function buildBookingCalendarUrl(config) {
+    const locale = config.locale ?? "fr-FR";
+    const params = new URLSearchParams({
+      locationId: String(config.locationId),
+      gameIds: String(config.gameIds),
+      seatCount: String(config.seatCount)
+    });
+
+    return `${location.origin}/${locale}/booking/calendar?${params.toString()}`;
+  }
+
+  async function readFavorites() {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      try {
+        const result = await chrome.storage.local.get(FAVORITES_STORAGE_KEY);
+        const storedFavorites = result?.[FAVORITES_STORAGE_KEY];
+        return normalizeFavorites(storedFavorites);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    try {
+      const rawValue = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      if (!rawValue) return [];
+      return normalizeFavorites(JSON.parse(rawValue));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function writeFavorites(favorites) {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.set({
+        [FAVORITES_STORAGE_KEY]: favorites
+      });
+      return;
+    }
+
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+  }
+
+  function normalizeFavorites(value) {
+    if (!Array.isArray(value)) return [];
+
+    return value.filter(entry =>
+      entry
+      && entry.id
+      && entry.locationId
+      && entry.gameIds
+      && entry.seatCount
+    );
+  }
+
+  async function renderFavoritesTab(message = "") {
+    const content = document.getElementById("eva-ext-content");
+    content.innerHTML = "Chargement des paramètres de favoris...";
+
+    const [rawFavorites, locations] = await Promise.all([
+      readFavorites(),
+      loadLocations()
+    ]);
+    const favorites = await enrichFavoritesWithNames(rawFavorites, locations);
+
+    const selectedLocationId = pickLocationId(locations, favoriteBuilderState.locationId);
+    favoriteBuilderState.locationId = selectedLocationId;
+
+    const games = selectedLocationId
+      ? await loadGamesForLocation(selectedLocationId)
+      : [];
+
+    const selectedGameId = pickGameId(games, favoriteBuilderState.gameId);
+    favoriteBuilderState.gameId = selectedGameId;
+
+    const selectedGame = games.find(entry => String(entry.game.id) === String(selectedGameId)) ?? null;
+    const seatChoices = buildSeatChoices(selectedGame);
+    const selectedSeatCount = pickSeatCount(seatChoices, favoriteBuilderState.seatCount);
+    favoriteBuilderState.seatCount = selectedSeatCount;
+
+    if (!favorites.length) {
+      content.innerHTML = `
+        ${message ? `<p class="eva-ext-feedback">${escapeHtml(message)}</p>` : ""}
+        <p>Aucun favori enregistré pour le moment.</p>
+        ${renderFavoriteBuilder(locations, games, seatChoices)}
+      `;
+      return;
+    }
+
+    content.innerHTML = `
+      ${message ? `<p class="eva-ext-feedback">${escapeHtml(message)}</p>` : ""}
+      <div class="eva-ext-favorites-grid">
+        ${favorites.map(favorite => `
+        <section class="eva-ext-session eva-ext-favorite-card">
+          <h3>${escapeHtml(favorite.label ?? "Favori EVA")}</h3>
+          <div class="eva-ext-meta">
+            <div><strong>Centre :</strong> ${escapeHtml(favorite.locationName ?? favorite.locationId)}</div>
+            <div><strong>Jeu :</strong> ${escapeHtml(favorite.gameName ?? favorite.gameIds)}</div>
+            <div><strong>Places :</strong> ${escapeHtml(favorite.seatCount)}</div>
+          </div>
+          <div class="eva-ext-favorite-actions">
+            <button data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}">Ouvrir</button>
+            <button data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}">Supprimer</button>
+          </div>
+        </section>
+      `).join("")}
+      </div>
+      ${renderFavoriteBuilder(locations, games, seatChoices)}
+    `;
+  }
+
+  function renderFavoriteBuilder(locations, games, seatChoices) {
+    const locationOptions = locations.map(location => `
+      <option value="${escapeHtml(location.id)}" ${String(location.id) === String(favoriteBuilderState.locationId) ? "selected" : ""}>
+        ${escapeHtml(location.name)} (${escapeHtml(location.department ?? "-")})
+      </option>
+    `).join("");
+
+    const gameOptions = games.map(entry => `
+      <option value="${escapeHtml(entry.game.id)}" ${String(entry.game.id) === String(favoriteBuilderState.gameId) ? "selected" : ""}>
+        ${escapeHtml(entry.game.name)}
+      </option>
+    `).join("");
+
+    const seatOptions = seatChoices.map(value => `
+      <option value="${escapeHtml(value)}" ${String(value) === String(favoriteBuilderState.seatCount) ? "selected" : ""}>
+        ${escapeHtml(value)}
+      </option>
+    `).join("");
+
+    return `
+      <details class="eva-ext-session eva-ext-favorite-builder">
+        <summary>Créer un favori</summary>
+        <div class="eva-ext-form-grid">
+          <label>
+            Salle
+            <select data-favorite-field="locationId">
+              ${locationOptions || '<option value="">Aucune salle</option>'}
+            </select>
+          </label>
+          <label>
+            Jeu
+            <select data-favorite-field="gameId">
+              ${gameOptions || '<option value="">Aucun jeu</option>'}
+            </select>
+          </label>
+          <label>
+            Joueurs
+            <select data-favorite-field="seatCount">
+              ${seatOptions || '<option value="">-</option>'}
+            </select>
+          </label>
+          <label>
+            Nom du favori
+            <input
+              type="text"
+              data-favorite-field="label"
+              placeholder="Ex: Aix Battle 1 joueur"
+              value="${escapeHtml(favoriteBuilderState.label)}"
+            />
+          </label>
+        </div>
+        <div class="eva-ext-favorite-actions">
+          <button data-action="create-favorite-from-builder">Enregistrer</button>
+        </div>
+      </details>
+    `;
+  }
+
+  async function handleContentClick(event) {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+
+    const action = button.dataset.action;
+    const favoriteId = button.dataset.favoriteId;
+
+    if (action === "create-favorite-from-builder") {
+      await saveFavoriteFromBuilder();
+      return;
+    }
+
+    if (!favoriteId) return;
+
+    if (action === "open-favorite") {
+      await openFavoriteById(favoriteId);
+      return;
+    }
+
+    if (action === "delete-favorite") {
+      await deleteFavoriteById(favoriteId);
+    }
+  }
+
+  async function handleContentChange(event) {
+    const field = event.target?.dataset?.favoriteField;
+    if (!field) return;
+
+    if (field === "locationId") {
+      favoriteBuilderState.locationId = event.target.value;
+      favoriteBuilderState.gameId = "";
+      favoriteBuilderState.seatCount = "";
+      await refreshFavoriteBuilderFields();
+      return;
+    }
+
+    if (field === "gameId") {
+      favoriteBuilderState.gameId = event.target.value;
+      favoriteBuilderState.seatCount = "";
+      await refreshFavoriteBuilderFields();
+      return;
+    }
+
+    if (field === "seatCount") {
+      favoriteBuilderState.seatCount = event.target.value;
+      return;
+    }
+
+    if (field === "label") {
+      favoriteBuilderState.label = event.target.value;
+    }
+  }
+
+  async function refreshFavoriteBuilderFields() {
+    const content = document.getElementById("eva-ext-content");
+    if (!content) return;
+
+    const locationSelect = content.querySelector('select[data-favorite-field="locationId"]');
+    const gameSelect = content.querySelector('select[data-favorite-field="gameId"]');
+    const seatSelect = content.querySelector('select[data-favorite-field="seatCount"]');
+    if (!locationSelect || !gameSelect || !seatSelect) return;
+
+    const selectedLocationId = String(locationSelect.value || favoriteBuilderState.locationId || "");
+    favoriteBuilderState.locationId = selectedLocationId;
+
+    const games = selectedLocationId ? await loadGamesForLocation(selectedLocationId) : [];
+    const selectedGameId = pickGameId(games, favoriteBuilderState.gameId);
+    favoriteBuilderState.gameId = selectedGameId;
+    replaceSelectOptions(
+      gameSelect,
+      games.map(entry => ({
+        value: String(entry.game.id),
+        label: entry.game.name
+      })),
+      selectedGameId,
+      "Aucun jeu"
+    );
+
+    const selectedGame = games.find(entry => String(entry.game.id) === String(selectedGameId)) ?? null;
+    const seatChoices = buildSeatChoices(selectedGame);
+    const selectedSeatCount = pickSeatCount(seatChoices, favoriteBuilderState.seatCount);
+    favoriteBuilderState.seatCount = selectedSeatCount;
+    replaceSelectOptions(
+      seatSelect,
+      seatChoices.map(value => ({
+        value: String(value),
+        label: String(value)
+      })),
+      selectedSeatCount,
+      "-"
+    );
+  }
+
+  function replaceSelectOptions(selectElement, options, selectedValue, emptyLabel) {
+    selectElement.innerHTML = options.length
+      ? options.map(option => `
+          <option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>
+        `).join("")
+      : `<option value="">${escapeHtml(emptyLabel)}</option>`;
+
+    selectElement.value = options.length ? String(selectedValue ?? options[0].value) : "";
+  }
+
+  async function loadLocations() {
+    if (locationsCache) {
+      return locationsCache;
+    }
+
+    const data = await graphqlPublic(
+      "listLocations",
+      {
+        country: "FR",
+        sortOrder: {
+          by: "DEPARTMENT"
+        }
+      },
+      LIST_LOCATIONS_QUERY
+    );
+
+    locationsCache = (data?.listLocations ?? [])
+      .filter(location => location?.id && location?.name)
+      .filter(location => location.status !== "Closed");
+
+    return locationsCache;
+  }
+
+  async function loadGamesForLocation(locationId) {
+    const key = String(locationId);
+    if (locationGamesCache.has(key)) {
+      return locationGamesCache.get(key);
+    }
+
+    const data = await graphqlPublic(
+      "Booking",
+      {
+        id: Number(locationId)
+      },
+      BOOKING_LOCATION_QUERY
+    );
+
+    const games = (data?.location?.locationGames ?? [])
+      .filter(entry => entry?.game?.id && entry?.game?.name);
+
+    locationGamesCache.set(key, games);
+    return games;
+  }
+
+  function pickLocationId(locations, currentLocationId) {
+    if (!locations.length) return "";
+    if (currentLocationId && locations.some(location => String(location.id) === String(currentLocationId))) {
+      return String(currentLocationId);
+    }
+    return String(locations[0].id);
+  }
+
+  function pickGameId(games, currentGameId) {
+    if (!games.length) return "";
+    if (currentGameId && games.some(entry => String(entry.game.id) === String(currentGameId))) {
+      return String(currentGameId);
+    }
+    return String(games[0].game.id);
+  }
+
+  function buildSeatChoices(selectedGameEntry) {
+    if (!selectedGameEntry) return [];
+
+    const minPlayers = Number(selectedGameEntry.game?.minPlayer ?? 1);
+    const gameMaxPlayers = Number(selectedGameEntry.game?.maxPlayer ?? minPlayers);
+    const locationMaxSeats = Number(selectedGameEntry.maxSeatCount ?? gameMaxPlayers);
+    const maxPlayers = Math.max(minPlayers, Math.min(gameMaxPlayers, locationMaxSeats));
+
+    return Array.from({ length: maxPlayers - minPlayers + 1 }, (_, index) => String(minPlayers + index));
+  }
+
+  function pickSeatCount(seatChoices, currentSeatCount) {
+    if (!seatChoices.length) return "";
+    if (currentSeatCount && seatChoices.includes(String(currentSeatCount))) {
+      return String(currentSeatCount);
+    }
+    return String(seatChoices[0]);
+  }
+
+  async function saveFavoriteFromBuilder() {
+    const locations = await loadLocations();
+    const locationId = pickLocationId(locations, favoriteBuilderState.locationId);
+    if (!locationId) return;
+
+    const games = await loadGamesForLocation(locationId);
+    const gameId = pickGameId(games, favoriteBuilderState.gameId);
+    if (!gameId) return;
+
+    const selectedGame = games.find(entry => String(entry.game.id) === String(gameId)) ?? null;
+    const seatChoices = buildSeatChoices(selectedGame);
+    const seatCount = pickSeatCount(seatChoices, favoriteBuilderState.seatCount);
+    if (!seatCount) return;
+
+    const location = locations.find(entry => String(entry.id) === String(locationId));
+    const game = selectedGame?.game;
+    if (!location || !game) return;
+
+    const customLabel = favoriteBuilderState.label.trim();
+    const label = customLabel || `${location.name} • ${game.name} • ${seatCount} joueur(s)`;
+
+    const favoriteToSave = {
+      id: `${locationId}-${gameId}-${seatCount}`,
+      label,
+      locationId: String(locationId),
+      locationName: String(location.name),
+      gameIds: String(gameId),
+      gameName: String(game.name),
+      seatCount: String(seatCount),
+      locale: "fr-FR",
+      savedAt: Date.now()
+    };
+
+    const favorites = await readFavorites();
+    const existingIndex = favorites.findIndex(entry => entry.id === favoriteToSave.id);
+
+    if (existingIndex >= 0) {
+      favorites[existingIndex] = favoriteToSave;
+    } else {
+      favorites.unshift(favoriteToSave);
+    }
+
+    await writeFavorites(favorites.slice(0, 20));
+    favoriteBuilderState.label = "";
+    await renderFavoritesTab("Favori enregistré.");
+  }
+
+  async function enrichFavoritesWithNames(favorites, locations) {
+    if (!favorites.length) return favorites;
+
+    const locationNameById = new Map(
+      locations.map(location => [String(location.id), location.name])
+    );
+
+    const favoritesWithNames = [];
+    for (const favorite of favorites) {
+      const locationId = String(favorite.locationId);
+      const locationName = favorite.locationName || locationNameById.get(locationId) || favorite.locationId;
+
+      let gameName = favorite.gameName;
+      if (!gameName) {
+        try {
+          const games = await loadGamesForLocation(locationId);
+          const game = games.find(entry => String(entry.game.id) === String(favorite.gameIds));
+          gameName = game?.game?.name || favorite.gameIds;
+        } catch (_) {
+          gameName = favorite.gameIds;
+        }
+      }
+
+      favoritesWithNames.push({
+        ...favorite,
+        locationName,
+        gameName
+      });
+    }
+
+    return favoritesWithNames;
+  }
+
+  async function openFavoriteById(favoriteId) {
+    const favorite = (await readFavorites()).find(entry => entry.id === favoriteId);
+    if (!favorite) return;
+
+    location.assign(buildBookingCalendarUrl(favorite));
+  }
+
+  async function deleteFavoriteById(favoriteId) {
+    const favorites = await readFavorites();
+    const filteredFavorites = favorites.filter(entry => entry.id !== favoriteId);
+    await writeFavorites(filteredFavorites);
+    await renderFavoritesTab("Favori supprimé.");
   }
 
   async function loadUpcomingParticipants() {

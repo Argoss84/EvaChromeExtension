@@ -3,6 +3,9 @@
   "name": "EVA Participants",
   "version": "1.1.0",
   "description": "Affiche les participants des sessions EVA réservées et de l'historique.",
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://app.eva.gg/*",
     "https://api.eva.gg/*"

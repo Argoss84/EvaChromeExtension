@@ -1,13 +1,15 @@
 (function () {
   const API_URL = "https://api.eva.gg/graphql";
+  const EVA_APP_ORIGIN = "https://app.eva.gg";
   const PANEL_ID = "eva-participants-panel";
   const AUTH_REQUIRED_MESSAGE = "Connecte-toi à ton compte EVA pour utiliser l'extension.";
   const FAVORITES_STORAGE_KEY = "eva_ext_booking_favorites_v1";
 
   let cachedAccessToken = null;
   let refreshAccessTokenPromise = null;
-  let activeTab = "upcoming";
+  let activeTab = "favorites";
   let isPanelCollapsed = false;
+  let activeEvaTabIdCache = null;
   let locationsCache = null;
   const locationGamesCache = new Map();
   const favoriteBuilderState = {
@@ -144,25 +146,20 @@
       <div class="eva-ext-header">
         <strong id="eva-ext-title">Participants EVA</strong>
         <div class="eva-ext-header-actions">
-          <button id="eva-ext-refresh">Rafraîchir</button>
           <button id="eva-ext-toggle" title="Réduire le panneau" aria-label="Réduire le panneau">—</button>
         </div>
       </div>
 
       <div class="eva-ext-tabs">
-        <button class="eva-ext-tab active" data-tab="upcoming">À venir</button>
+        <button class="eva-ext-tab active" data-tab="favorites">Favoris</button>
+        <button class="eva-ext-tab" data-tab="upcoming">À venir</button>
         <button class="eva-ext-tab" data-tab="history">Historique</button>
-        <button class="eva-ext-tab" data-tab="favorites">Favoris</button>
       </div>
 
-      <div id="eva-ext-content">Clique sur rafraîchir.</div>
+      <div id="eva-ext-content">Chargement...</div>
     `;
 
     document.body.appendChild(panel);
-
-    document
-      .getElementById("eva-ext-refresh")
-      .addEventListener("click", loadCurrentTab);
 
     document
       .getElementById("eva-ext-toggle")
@@ -191,6 +188,7 @@
       .addEventListener("change", handleContentChange);
 
     setPanelCollapsed(false);
+    loadCurrentTab();
   }
 
   function setPanelCollapsed(collapsed) {
@@ -212,27 +210,16 @@
     }
 
     refreshAccessTokenPromise = (async () => {
-      const response = await fetch(API_URL, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "accept": "*/*",
-          "content-type": "application/json",
-          "eva-client-app-name": "spa-app"
-        },
-        body: JSON.stringify({
-          operationName: "refreshToken",
-          variables: {},
-          query: REFRESH_TOKEN_QUERY
-        })
+      const { ok, status, json } = await requestEvaApiFromActiveTab({
+        operationName: "refreshToken",
+        variables: {},
+        query: REFRESH_TOKEN_QUERY
       });
 
-      const json = await response.json();
-
-      if (!response.ok || json.errors?.length || !json.data?.refreshToken?.accessToken) {
+      if (!ok || json?.errors?.length || !json?.data?.refreshToken?.accessToken) {
         throw new Error(
-          "Impossible de rafraîchir le token :\n" +
-          JSON.stringify(json.errors ?? json, null, 2)
+          `Impossible de rafraîchir le token (HTTP ${status}) :\n` +
+          JSON.stringify(json?.errors ?? json ?? {}, null, 2)
         );
       }
 
@@ -283,51 +270,29 @@
   }
 
   async function graphqlRequest(operationName, variables, query) {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "accept": "*/*",
-        "content-type": "application/json",
-        "eva-client-app-name": "spa-app",
-        "authorization": `Bearer ${cachedAccessToken}`
-      },
-      body: JSON.stringify({
-        operationName,
-        variables,
-        query
-      })
+    const { ok, status, json } = await requestEvaApiFromActiveTab({
+      operationName,
+      variables,
+      query,
+      accessToken: cachedAccessToken
     });
 
-    const json = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}\n${JSON.stringify(json, null, 2)}`);
+    if (!ok) {
+      throw new Error(`HTTP ${status}\n${JSON.stringify(json ?? {}, null, 2)}`);
     }
 
     return json;
   }
 
   async function graphqlPublic(operationName, variables, query) {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "accept": "*/*",
-        "content-type": "application/json",
-        "eva-client-app-name": "spa-app"
-      },
-      body: JSON.stringify({
-        operationName,
-        variables,
-        query
-      })
+    const { ok, status, json } = await requestEvaApiFromActiveTab({
+      operationName,
+      variables,
+      query
     });
 
-    const json = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}\n${JSON.stringify(json, null, 2)}`);
+    if (!ok) {
+      throw new Error(`HTTP ${status}\n${JSON.stringify(json ?? {}, null, 2)}`);
     }
 
     if (json.errors?.length) {
@@ -335,6 +300,51 @@
     }
 
     return json.data;
+  }
+
+  async function requestEvaApiFromActiveTab(payload) {
+    const tabId = await getActiveEvaTabId();
+
+    return new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tabId, { type: "eva-api-request", payload }, response => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(`Impossible de contacter l'onglet EVA: ${chrome.runtime.lastError.message}`));
+          return;
+        }
+
+        if (!response) {
+          reject(new Error("Aucune reponse de l'onglet EVA."));
+          return;
+        }
+
+        if (response.error) {
+          reject(new Error(response.error));
+          return;
+        }
+
+        resolve(response);
+      });
+    });
+  }
+
+  async function getActiveEvaTabId() {
+    if (activeEvaTabIdCache !== null) {
+      return activeEvaTabIdCache;
+    }
+
+    const tabs = await chrome.tabs.query({
+      active: true,
+      currentWindow: true
+    });
+    const activeTab = tabs?.[0];
+    const url = activeTab?.url ?? "";
+
+    if (!activeTab?.id || !/^https:\/\/(app|www)\.eva\.gg\//.test(url)) {
+      throw new Error("Ouvre un onglet EVA (app.eva.gg ou www.eva.gg) puis reessaie.");
+    }
+
+    activeEvaTabIdCache = activeTab.id;
+    return activeEvaTabIdCache;
   }
 
   function loadCurrentTab() {
@@ -357,7 +367,7 @@
       seatCount: String(config.seatCount)
     });
 
-    return `${location.origin}/${locale}/booking/calendar?${params.toString()}`;
+    return `${EVA_APP_ORIGIN}/${locale}/booking/calendar?${params.toString()}`;
   }
 
   async function readFavorites() {
@@ -441,16 +451,13 @@
       ${message ? `<p class="eva-ext-feedback">${escapeHtml(message)}</p>` : ""}
       <div class="eva-ext-favorites-grid">
         ${favorites.map(favorite => `
-        <section class="eva-ext-session eva-ext-favorite-card">
+        <section class="eva-ext-session eva-ext-favorite-card" data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}" role="button" tabindex="0" title="Ouvrir ce favori">
+          <button class="eva-ext-favorite-delete" data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}" title="Supprimer ce favori" aria-label="Supprimer ce favori">×</button>
           <h3>${escapeHtml(favorite.label ?? "Favori EVA")}</h3>
-          <div class="eva-ext-meta">
-            <div><strong>Centre :</strong> ${escapeHtml(favorite.locationName ?? favorite.locationId)}</div>
-            <div><strong>Jeu :</strong> ${escapeHtml(favorite.gameName ?? favorite.gameIds)}</div>
-            <div><strong>Places :</strong> ${escapeHtml(favorite.seatCount)}</div>
-          </div>
-          <div class="eva-ext-favorite-actions">
-            <button data-action="open-favorite" data-favorite-id="${escapeHtml(favorite.id)}">Ouvrir</button>
-            <button data-action="delete-favorite" data-favorite-id="${escapeHtml(favorite.id)}">Supprimer</button>
+          <div class="eva-ext-favorite-inline-meta">
+            <span><strong>Centre:</strong> ${escapeHtml(favorite.locationName ?? favorite.locationId)}</span>
+            <span><strong>Jeu:</strong> ${escapeHtml(favorite.gameName ?? favorite.gameIds)}</span>
+            <span><strong>Joueurs:</strong> ${escapeHtml(favorite.seatCount)}</span>
           </div>
         </section>
       `).join("")}
@@ -518,11 +525,11 @@
   }
 
   async function handleContentClick(event) {
-    const button = event.target.closest("button[data-action]");
-    if (!button) return;
+    const actionElement = event.target.closest("[data-action]");
+    if (!actionElement) return;
 
-    const action = button.dataset.action;
-    const favoriteId = button.dataset.favoriteId;
+    const action = actionElement.dataset.action;
+    const favoriteId = actionElement.dataset.favoriteId;
 
     if (action === "create-favorite-from-builder") {
       await saveFavoriteFromBuilder();
@@ -783,7 +790,16 @@
     const favorite = (await readFavorites()).find(entry => entry.id === favoriteId);
     if (!favorite) return;
 
-    location.assign(buildBookingCalendarUrl(favorite));
+    openUrl(buildBookingCalendarUrl(favorite));
+  }
+
+  function openUrl(url) {
+    if (typeof chrome !== "undefined" && chrome.tabs?.create) {
+      chrome.tabs.create({ url });
+      return;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   async function deleteFavoriteById(favoriteId) {

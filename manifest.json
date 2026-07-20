@@ -23,5 +23,22 @@
   "permissions": [
     "activeTab",
     "scripting"
+  ],
+  "host_permissions": [
+    "https://app.eva.gg/*",
+    "https://api.eva.gg/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://app.eva.gg/*"],
+      "js": ["page-api-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://app.eva.gg/*"],
+      "js": ["page-bridge.js"],
+      "run_at": "document_idle"
+    }
   ]
 }

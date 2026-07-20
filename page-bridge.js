@@ -5,44 +5,68 @@
 
   window.__evassistantBridgeReady = true;
 
-  const API_URL = "https://api.eva.gg/graphql";
+  function relayToMainWorld(payload) {
+    return new Promise(resolve => {
+      const requestId = crypto.randomUUID();
+
+      const onResponse = event => {
+        if (event.detail?.requestId !== requestId) {
+          return;
+        }
+
+        window.removeEventListener("evassistant-api-response", onResponse);
+        resolve(event.detail.response);
+      };
+
+      window.addEventListener("evassistant-api-response", onResponse);
+      window.dispatchEvent(new CustomEvent("evassistant-api-request", {
+        detail: { requestId, payload }
+      }));
+    });
+  }
+
+  function scrollToSessionOnPage(hints) {
+    return new Promise(resolve => {
+      const requestId = crypto.randomUUID();
+
+      const onResponse = event => {
+        if (event.detail?.requestId !== requestId) {
+          return;
+        }
+
+        window.removeEventListener("evassistant-scroll-to-session-response", onResponse);
+        resolve(Boolean(event.detail.scrolled));
+      };
+
+      window.addEventListener("evassistant-scroll-to-session-response", onResponse);
+      window.dispatchEvent(new CustomEvent("evassistant-scroll-to-session", {
+        detail: { requestId, hints }
+      }));
+    });
+  }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "evassistant-get-access-token") {
+      sendResponse({
+        accessToken: document.documentElement.dataset.evassistantToken || null
+      });
+      return false;
+    }
+
+    if (message?.type === "evassistant-scroll-to-session") {
+      scrollToSessionOnPage(message.payload?.hints ?? {})
+        .then(scrolled => sendResponse({ scrolled }))
+        .catch(() => sendResponse({ scrolled: false }));
+
+      return true;
+    }
+
     if (message?.type !== "evassistant-api-request") {
       return false;
     }
 
-    const { operationName, variables, query, accessToken } = message.payload ?? {};
-
-    fetch(API_URL, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "accept": "*/*",
-        "content-type": "application/json",
-        "eva-client-app-name": "spa-app",
-        ...(accessToken ? { "authorization": `Bearer ${accessToken}` } : {})
-      },
-      body: JSON.stringify({
-        operationName,
-        variables,
-        query
-      })
-    })
-      .then(async response => {
-        let json = null;
-        try {
-          json = await response.json();
-        } catch (_) {
-          json = null;
-        }
-
-        sendResponse({
-          ok: response.ok,
-          status: response.status,
-          json
-        });
-      })
+    relayToMainWorld(message.payload ?? {})
+      .then(response => sendResponse(response))
       .catch(error => {
         sendResponse({
           ok: false,

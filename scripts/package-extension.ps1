@@ -17,7 +17,8 @@ $files = @(
   "popup.html",
   "content.js",
   "style.css",
-  "page-bridge.js"
+  "page-bridge.js",
+  "page-api-main.js"
 )
 
 foreach ($file in $files) {

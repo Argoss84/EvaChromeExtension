@@ -36,18 +36,21 @@
             booking {
               id
               terrainId
-              playerCount
               seatCount
               status
               orderId
               bookingGroupUnitId
+              sessionLink
               slot {
                 id
                 localDatetime
                 startTime
                 endTime
+                convocationTime
               }
+              gameId
               game {
+                id
                 name
                 identifier
               }
@@ -63,17 +66,23 @@
     }
   `;
 
-  const UPCOMING_PARTICIPANTS_QUERY = `
-    query listParticipants($slotId: String!, $terrainId: Int!) {
-      listParticipants(slotId: $slotId, terrainId: $terrainId) {
-        user {
-          displayName
+  const USE_SESSIONS_QUERY = `
+    query useSessions($data: ListLocationSessionsByDateInput!) {
+      listLocationGameSessionsByDate(data: $data) {
+        takenSeatCount
+        slot {
+          id
+          startTime
+          localDatetime
+          convocationTime
         }
-        experience {
-          level
+        terrain {
+          id
         }
-        subscriptionPlan
-        isAnonymous
+        game {
+          id
+          name
+        }
       }
     }
   `;
@@ -228,10 +237,17 @@
     }
 
     refreshAccessTokenPromise = (async () => {
+      const pageToken = await requestAccessTokenFromPage();
+      if (pageToken) {
+        cachedAccessToken = pageToken;
+        return pageToken;
+      }
+
       const { ok, status, json } = await requestEvaApiFromActiveTab({
         operationName: "refreshToken",
         variables: {},
-        query: REFRESH_TOKEN_QUERY
+        query: REFRESH_TOKEN_QUERY,
+        authMode: "none"
       });
 
       if (!ok || json?.errors?.length || !json?.data?.refreshToken?.accessToken) {
@@ -249,6 +265,26 @@
       return await refreshAccessTokenPromise;
     } finally {
       refreshAccessTokenPromise = null;
+    }
+  }
+
+  async function requestAccessTokenFromPage() {
+    try {
+      const tabId = await getActiveEvaTabId();
+      await ensureBridgeInjected(tabId);
+
+      return await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { type: "evassistant-get-access-token" }, response => {
+          if (chrome.runtime.lastError || !response?.accessToken) {
+            resolve(null);
+            return;
+          }
+
+          resolve(response.accessToken);
+        });
+      });
+    } catch (_) {
+      return null;
     }
   }
 
@@ -292,7 +328,8 @@
       operationName,
       variables,
       query,
-      accessToken: cachedAccessToken
+      accessToken: cachedAccessToken,
+      authMode: "explicit"
     });
 
     if (!ok) {
@@ -306,7 +343,8 @@
     const { ok, status, json } = await requestEvaApiFromActiveTab({
       operationName,
       variables,
-      query
+      query,
+      authMode: "none"
     });
 
     if (!ok) {
@@ -318,6 +356,16 @@
     }
 
     return json.data;
+  }
+
+  async function graphqlTry(operationName, variables, query, { usePublic = false } = {}) {
+    try {
+      return usePublic
+        ? await graphqlPublic(operationName, variables, query)
+        : await graphql(operationName, variables, query);
+    } catch (_) {
+      return null;
+    }
   }
 
   async function requestEvaApiFromActiveTab(payload) {
@@ -351,29 +399,177 @@
       return activeEvaTabIdCache;
     }
 
-    const tabs = await chrome.tabs.query({
+    const isEvaUrl = url => /^https:\/\/(app|www)\.eva\.gg\//.test(url ?? "");
+
+    const activeTabs = await chrome.tabs.query({
       active: true,
       currentWindow: true
     });
-    const activeTab = tabs?.[0];
-    const url = activeTab?.url ?? "";
-
-    if (!activeTab?.id || !/^https:\/\/(app|www)\.eva\.gg\//.test(url)) {
-      throw new Error("Ouvre un onglet EVA (app.eva.gg ou www.eva.gg) puis reessaie.");
+    const activeTab = activeTabs?.[0];
+    if (activeTab?.id && isEvaUrl(activeTab.url)) {
+      activeEvaTabIdCache = activeTab.id;
+      return activeEvaTabIdCache;
     }
 
-    activeEvaTabIdCache = activeTab.id;
-    return activeEvaTabIdCache;
+    const evaTabsCurrentWindow = await chrome.tabs.query({
+      currentWindow: true,
+      url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
+    });
+    if (evaTabsCurrentWindow?.[0]?.id) {
+      activeEvaTabIdCache = evaTabsCurrentWindow[0].id;
+      return activeEvaTabIdCache;
+    }
+
+    const evaTabsAllWindows = await chrome.tabs.query({
+      url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
+    });
+    if (evaTabsAllWindows?.[0]?.id) {
+      activeEvaTabIdCache = evaTabsAllWindows[0].id;
+      return activeEvaTabIdCache;
+    }
+
+    throw new Error("Ouvre un onglet EVA connecté (app.eva.gg ou www.eva.gg), puis réessaie.");
+  }
+
+  function waitForTabComplete(tabId, timeoutMs = 15000) {
+    return new Promise(resolve => {
+      chrome.tabs.get(tabId, tab => {
+        if (!tab || tab.status === "complete") {
+          resolve();
+          return;
+        }
+
+        const timeout = setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }, timeoutMs);
+
+        const listener = (updatedTabId, info) => {
+          if (updatedTabId === tabId && info.status === "complete") {
+            clearTimeout(timeout);
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    });
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function waitForBridgeReady(tabId, maxAttempts = 40) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const ready = await new Promise(resolve => {
+        chrome.tabs.sendMessage(tabId, { type: "evassistant-get-access-token" }, response => {
+          resolve(!chrome.runtime.lastError && response !== undefined);
+        });
+      });
+
+      if (ready) {
+        return true;
+      }
+
+      await delay(300);
+    }
+
+    return false;
+  }
+
+  async function scrollToSessionOnEvaTab(tabId, hints) {
+    await ensureBridgeInjected(tabId);
+    await waitForBridgeReady(tabId);
+
+    return new Promise(resolve => {
+      chrome.tabs.sendMessage(tabId, {
+        type: "evassistant-scroll-to-session",
+        payload: { hints }
+      }, response => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+
+        resolve(Boolean(response?.scrolled));
+      });
+    });
+  }
+
+  async function openBookingSessionOnEva(actionElement) {
+    const url = actionElement.dataset.sessionUrl;
+    if (!url) {
+      return;
+    }
+
+    const hints = {
+      startTime: actionElement.dataset.startTime ?? "",
+      convocationTime: actionElement.dataset.convocationTime ?? "",
+      localDatetime: actionElement.dataset.localDatetime ?? "",
+      gameName: actionElement.dataset.gameName ?? "",
+      date: actionElement.dataset.sessionDate ?? "",
+      locationId: actionElement.dataset.locationId ?? ""
+    };
+
+    let tabId;
+
+    try {
+      const evaTabs = await chrome.tabs.query({
+        url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
+      });
+
+      if (evaTabs[0]?.id) {
+        tabId = evaTabs[0].id;
+
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            world: "MAIN",
+            func: pendingHints => {
+              sessionStorage.setItem("evassistant-pending-scroll", JSON.stringify(pendingHints));
+            },
+            args: [hints]
+          });
+        } catch (_) {
+          // Ignore if the tab is not ready yet.
+        }
+
+        await chrome.tabs.update(tabId, { url, active: true });
+      } else {
+        const tab = await chrome.tabs.create({ url, active: true });
+        tabId = tab.id;
+      }
+
+      await waitForTabComplete(tabId, 20000);
+      await waitForBridgeReady(tabId);
+      await scrollToSessionOnEvaTab(tabId, hints);
+    } catch (_) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   }
 
   async function ensureBridgeInjected(tabId) {
+    // Le content script injecte déjà page-api-main.js et page-bridge.js sur app.eva.gg.
+    // On garde ce fallback pour les onglets ouverts avant l'installation/rechargement.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["page-api-main.js"],
+        world: "MAIN"
+      });
+    } catch (_) {
+      // Ignore si déjà injecté.
+    }
+
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
         files: ["page-bridge.js"]
       });
-    } catch (error) {
-      throw new Error(`Impossible d'initialiser Evassistant sur l'onglet EVA: ${error?.message ?? error}`);
+    } catch (_) {
+      // Ignore si déjà injecté.
     }
   }
 
@@ -553,6 +749,12 @@
 
     if (action === "create-favorite-from-builder") {
       await saveFavoriteFromBuilder();
+      return;
+    }
+
+    if (action === "open-session") {
+      event.preventDefault();
+      await openBookingSessionOnEva(actionElement);
       return;
     }
 
@@ -822,6 +1024,8 @@
   async function loadUpcomingParticipants() {
     const content = document.getElementById("evassistant-content");
     content.innerHTML = "Chargement des réservations à venir...";
+    activeEvaTabIdCache = null;
+    cachedAccessToken = null;
 
     try {
       const bookingData = await graphql(
@@ -846,30 +1050,121 @@
         return;
       }
 
-      content.innerHTML = `Chargement des participants pour ${bookings.length} session(s)...`;
+      content.innerHTML = `Chargement des sessions pour ${bookings.length} réservation(s)...`;
 
-      const sessions = await Promise.all(
-        bookings.map(async booking => {
-          const participantData = await graphql(
-            "listParticipants",
-            {
-              slotId: booking.slot.id,
-              terrainId: booking.terrainId
-            },
-            UPCOMING_PARTICIPANTS_QUERY
-          );
-
-          return {
-            booking,
-            participants: participantData.listParticipants ?? []
-          };
-        })
-      );
+      const sessionsByLookupKey = await loadGameSessionsForBookings(bookings);
+      const sessions = bookings.map(booking => {
+        const lookupKey = getSessionLookupKey(booking);
+        const gameSessions = lookupKey ? sessionsByLookupKey.get(lookupKey) ?? [] : [];
+        const gameSession = findGameSessionForBooking(gameSessions, booking);
+        return { booking, gameSession };
+      });
 
       renderUpcomingSessions(sessions);
     } catch (error) {
       renderError(error);
     }
+  }
+
+  function getBookingDate(booking) {
+    const value = booking?.slot?.localDatetime;
+    if (!value) return "";
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function getSessionLookupKey(booking) {
+    const locationId = booking.location?.id;
+    const date = getBookingDate(booking);
+
+    if (!locationId || !date) {
+      return "";
+    }
+
+    return `${locationId}:${date}`;
+  }
+
+  function groupBookingsForSessionLookup(bookings) {
+    const groups = new Map();
+
+    for (const booking of bookings) {
+      const lookupKey = getSessionLookupKey(booking);
+      if (!lookupKey) continue;
+
+      if (!groups.has(lookupKey)) {
+        const [locationId, date] = lookupKey.split(":");
+        groups.set(lookupKey, {
+          locationId: Number(locationId),
+          date,
+          seatCount: booking.seatCount || 1
+        });
+      } else {
+        const group = groups.get(lookupKey);
+        group.seatCount = Math.max(group.seatCount, booking.seatCount || 1);
+      }
+    }
+
+    return [...groups.values()];
+  }
+
+  async function loadGameSessionsForBookings(bookings) {
+    const sessionsByLookupKey = new Map();
+    const groups = groupBookingsForSessionLookup(bookings);
+
+    await Promise.all(groups.map(async group => {
+      const lookupKey = `${group.locationId}:${group.date}`;
+      const variables = {
+        data: {
+          date: group.date,
+          isCompetitiveModeOnly: false,
+          locationId: group.locationId,
+          seatCount: group.seatCount,
+          seatTypes: ["PLAYER"]
+        }
+      };
+
+      let data = await graphqlTry("useSessions", variables, USE_SESSIONS_QUERY, { usePublic: true });
+      if (!data?.listLocationGameSessionsByDate) {
+        data = await graphqlTry("useSessions", variables, USE_SESSIONS_QUERY);
+      }
+
+      sessionsByLookupKey.set(
+        lookupKey,
+        data?.listLocationGameSessionsByDate ?? []
+      );
+    }));
+
+    return sessionsByLookupKey;
+  }
+
+  function findGameSessionForBooking(gameSessions, booking) {
+    if (!gameSessions?.length) {
+      return null;
+    }
+
+    const gameId = booking.gameId ?? booking.game?.id;
+
+    return gameSessions.find(session =>
+      session.terrain?.id === booking.terrainId &&
+      String(session.game?.id) === String(gameId) &&
+      (
+        session.slot?.id === booking.slot?.id ||
+        session.slot?.startTime === booking.slot?.startTime ||
+        session.slot?.localDatetime === booking.slot?.localDatetime
+      )
+    ) ?? gameSessions.find(session =>
+      session.terrain?.id === booking.terrainId &&
+      String(session.game?.id) === String(gameId) &&
+      session.slot?.startTime === booking.slot?.startTime
+    ) ?? null;
   }
 
   async function loadGameHistory() {
@@ -1127,57 +1422,50 @@
     return outcome;
   }
 
-  async function loadUpcomingParticipants() {
+  function renderUpcomingSessions(sessions) {
     const content = document.getElementById("evassistant-content");
-    content.innerHTML = "Chargement des réservations à venir...";
 
-    try {
-      const bookingData = await graphql(
-        "getBookingOrderList",
-        {
-          page: {
-            page: 1,
-            limit: 50
-          },
-          filters: {
-            bookingPassed: false
-          }
-        },
-        BOOKING_QUERY
-      );
+    content.innerHTML = `
+      <div class="evassistant-upcoming-grid">
+        ${sessions.map(({ booking, gameSession }) => renderUpcomingCard(booking, gameSession)).join("")}
+      </div>
+    `;
+  }
 
-      const bookings = extractBookings(bookingData)
-        .sort((a, b) => getBookingTime(a) - getBookingTime(b));
+  function renderUpcomingCard(booking, gameSession) {
+    const gameName = booking.game?.name ?? gameSession?.game?.name ?? "Session EVA";
+    const locationName = booking.location?.name ?? "Lieu inconnu";
+    const date = formatDate(booking.slot.localDatetime);
+    const time = booking.slot.startTime ?? "-";
+    const playerCount = gameSession?.takenSeatCount ?? "—";
 
-      if (!bookings.length) {
-        content.innerHTML = "Aucune session à venir trouvée.";
-        return;
-      }
-
-      content.innerHTML = `Chargement des participants pour ${bookings.length} session(s)...`;
-
-      const sessions = await Promise.all(
-        bookings.map(async booking => {
-          const participantData = await graphql(
-            "listParticipants",
-            {
-              slotId: booking.slot.id,
-              terrainId: booking.terrainId
-            },
-            UPCOMING_PARTICIPANTS_QUERY
-          );
-
-          return {
-            booking,
-            participants: participantData.listParticipants ?? []
-          };
-        })
-      );
-
-      renderUpcomingSessions(sessions);
-    } catch (error) {
-      renderError(error);
-    }
+    return `
+      <article class="evassistant-upcoming-card">
+        <div class="evassistant-upcoming-card__head">
+          <h3>${escapeHtml(gameName)}</h3>
+          ${booking.sessionLink
+            ? `<a
+                class="evassistant-session-link"
+                href="#"
+                data-action="open-session"
+                data-session-url="${escapeHtml(booking.sessionLink)}"
+                data-start-time="${escapeHtml(gameSession?.slot?.startTime ?? booking.slot?.startTime ?? "")}"
+                data-convocation-time="${escapeHtml(gameSession?.slot?.convocationTime ?? booking.slot?.convocationTime ?? "")}"
+                data-local-datetime="${escapeHtml(booking.slot?.localDatetime ?? gameSession?.slot?.localDatetime ?? "")}"
+                data-game-name="${escapeHtml(booking.game?.name ?? gameSession?.game?.name ?? "")}"
+                data-session-date="${escapeHtml(getBookingDate(booking))}"
+                data-location-id="${escapeHtml(String(booking.location?.id ?? ""))}"
+              >Voir la session</a>`
+            : ""}
+        </div>
+        <div class="evassistant-upcoming-meta evassistant-upcoming-meta--compact">
+          <div><span>Lieu</span><span>${escapeHtml(locationName)}</span></div>
+          <div><span>Date</span><span>${escapeHtml(date)}</span></div>
+          <div><span>Horaire</span><span>${escapeHtml(time)}</span></div>
+          <div><span>Joueurs</span><span>${escapeHtml(String(playerCount))}</span></div>
+        </div>
+      </article>
+    `;
   }
 
   function extractBookings(data) {
@@ -1192,64 +1480,6 @@
       )
       .filter(Boolean)
       .filter(booking => booking.slot?.id && booking.terrainId && booking.orderId);
-  }
-
-  function renderUpcomingSessions(sessions) {
-    const content = document.getElementById("evassistant-content");
-
-    content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="evassistant-session">
-        ${renderSessionHeader(booking)}
-        ${renderUpcomingParticipantsTable(participants)}
-      </section>
-    `).join("");
-  }
-
-  function renderSessionHeader(booking) {
-    const date = formatDate(booking.slot.localDatetime);
-    const gameName = booking.game?.name ?? "Session EVA";
-    const locationName = booking.location?.name ?? "Lieu inconnu";
-
-    return `
-      <h3>${escapeHtml(gameName)}</h3>
-
-      <div class="evassistant-meta">
-        <div><strong>Lieu :</strong> ${escapeHtml(locationName)}</div>
-        <div><strong>Date :</strong> ${escapeHtml(date)}</div>
-        <div><strong>Horaire :</strong> ${escapeHtml(booking.slot.startTime ?? "-")} - ${escapeHtml(booking.slot.endTime ?? "-")}</div>
-        <div><strong>Terrain :</strong> ${escapeHtml(booking.terrainId ?? "-")}</div>
-        <div><strong>Places :</strong> ${escapeHtml(booking.playerCount ?? "-")} / ${escapeHtml(booking.seatCount ?? "-")}</div>
-      </div>
-    `;
-  }
-
-  function renderUpcomingParticipantsTable(participants) {
-    if (!participants.length) {
-      return `<p>Aucun participant trouvé.</p>`;
-    }
-
-    return `
-      <table class="evassistant-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Nom</th>
-            <th>Niveau</th>
-            <th>Abonnement</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${participants.map((p, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${p.isAnonymous ? "Anonyme" : escapeHtml(p.user?.displayName ?? "-")}</td>
-              <td>${escapeHtml(p.experience?.level ?? "-")}</td>
-              <td>${escapeHtml(p.subscriptionPlan ?? "-")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
   }
 
   function getBookingTime(booking) {

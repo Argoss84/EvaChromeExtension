@@ -1007,11 +1007,23 @@
     const favorite = (await readFavorites()).find(entry => entry.id === favoriteId);
     if (!favorite) return;
 
-    openUrl(buildBookingCalendarUrl(favorite));
+    await openUrlInCurrentEvaTab(buildBookingCalendarUrl(favorite));
   }
 
-  function openUrl(url) {
-    window.open(url, "_blank", "noopener,noreferrer");
+  async function openUrlInCurrentEvaTab(url) {
+    try {
+      const tabId = await getActiveEvaTabId();
+      await chrome.tabs.update(tabId, { url, active: true });
+      return;
+    } catch (_) {
+      const evaTabs = await chrome.tabs.query({
+        url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
+      });
+
+      if (evaTabs[0]?.id) {
+        await chrome.tabs.update(evaTabs[0].id, { url, active: true });
+      }
+    }
   }
 
   async function deleteFavoriteById(favoriteId) {

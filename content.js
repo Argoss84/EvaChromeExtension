@@ -394,41 +394,40 @@
     });
   }
 
+  async function getCurrentTabId() {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true
+    });
+
+    if (!tab?.id) {
+      throw new Error("Aucun onglet actif trouvé.");
+    }
+
+    return tab.id;
+  }
+
   async function getActiveEvaTabId() {
     if (activeEvaTabIdCache !== null) {
       return activeEvaTabIdCache;
     }
 
     const isEvaUrl = url => /^https:\/\/(app|www)\.eva\.gg\//.test(url ?? "");
-
-    const activeTabs = await chrome.tabs.query({
+    const [activeTab] = await chrome.tabs.query({
       active: true,
       currentWindow: true
     });
-    const activeTab = activeTabs?.[0];
-    if (activeTab?.id && isEvaUrl(activeTab.url)) {
-      activeEvaTabIdCache = activeTab.id;
-      return activeEvaTabIdCache;
+
+    if (!activeTab?.id) {
+      throw new Error("Aucun onglet actif trouvé.");
     }
 
-    const evaTabsCurrentWindow = await chrome.tabs.query({
-      currentWindow: true,
-      url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
-    });
-    if (evaTabsCurrentWindow?.[0]?.id) {
-      activeEvaTabIdCache = evaTabsCurrentWindow[0].id;
-      return activeEvaTabIdCache;
+    if (!isEvaUrl(activeTab.url)) {
+      throw new Error("Ouvre app.eva.gg dans l'onglet actif, puis rouvre Evassistant.");
     }
 
-    const evaTabsAllWindows = await chrome.tabs.query({
-      url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
-    });
-    if (evaTabsAllWindows?.[0]?.id) {
-      activeEvaTabIdCache = evaTabsAllWindows[0].id;
-      return activeEvaTabIdCache;
-    }
-
-    throw new Error("Ouvre un onglet EVA connecté (app.eva.gg ou www.eva.gg), puis réessaie.");
+    activeEvaTabIdCache = activeTab.id;
+    return activeEvaTabIdCache;
   }
 
   function waitForTabComplete(tabId, timeoutMs = 15000) {
@@ -513,46 +512,34 @@
       locationId: actionElement.dataset.locationId ?? ""
     };
 
-    let tabId;
-
     try {
-      const evaTabs = await chrome.tabs.query({
-        url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
-      });
+      activeEvaTabIdCache = null;
+      const tabId = await getCurrentTabId();
 
-      if (evaTabs[0]?.id) {
-        tabId = evaTabs[0].id;
-
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            world: "MAIN",
-            func: pendingHints => {
-              sessionStorage.setItem("evassistant-pending-scroll", JSON.stringify(pendingHints));
-            },
-            args: [hints]
-          });
-        } catch (_) {
-          // Ignore if the tab is not ready yet.
-        }
-
-        await chrome.tabs.update(tabId, { url, active: true });
-      } else {
-        const tab = await chrome.tabs.create({ url, active: true });
-        tabId = tab.id;
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "MAIN",
+          func: pendingHints => {
+            sessionStorage.setItem("evassistant-pending-scroll", JSON.stringify(pendingHints));
+          },
+          args: [hints]
+        });
+      } catch (_) {
+        // Ignore if the tab is not ready yet.
       }
 
+      await chrome.tabs.update(tabId, { url, active: true });
       await waitForTabComplete(tabId, 20000);
+      await ensureBridgeInjected(tabId);
       await waitForBridgeReady(tabId);
       await scrollToSessionOnEvaTab(tabId, hints);
     } catch (_) {
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Navigation impossible sans accès à l'onglet actif.
     }
   }
 
   async function ensureBridgeInjected(tabId) {
-    // Le content script injecte déjà page-api-main.js et page-bridge.js sur app.eva.gg.
-    // On garde ce fallback pour les onglets ouverts avant l'installation/rechargement.
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
@@ -1011,19 +998,9 @@
   }
 
   async function openUrlInCurrentEvaTab(url) {
-    try {
-      const tabId = await getActiveEvaTabId();
-      await chrome.tabs.update(tabId, { url, active: true });
-      return;
-    } catch (_) {
-      const evaTabs = await chrome.tabs.query({
-        url: ["https://app.eva.gg/*", "https://www.eva.gg/*"]
-      });
-
-      if (evaTabs[0]?.id) {
-        await chrome.tabs.update(evaTabs[0].id, { url, active: true });
-      }
-    }
+    activeEvaTabIdCache = null;
+    const tabId = await getCurrentTabId();
+    await chrome.tabs.update(tabId, { url, active: true });
   }
 
   async function deleteFavoriteById(favoriteId) {

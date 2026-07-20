@@ -14,6 +14,7 @@ Le zip de publication doit contenir uniquement :
 - `content.js`
 - `style.css`
 - `page-bridge.js`
+- `page-api-main.js`
 - `icons/icon16.png`
 - `icons/icon32.png`
 - `icons/icon48.png`

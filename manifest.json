@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Evassistant",
   "short_name": "Evassistant",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Evassistant : participants de sessions EVA et favoris de réservation.",
   "icons": {
     "16": "icons/icon16.png",

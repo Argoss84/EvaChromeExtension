@@ -132,6 +132,74 @@ body {
   font-weight: 600;
 }
 
+.evassistant-game-card {
+  border: 1px solid #343434;
+  border-radius: 10px;
+  padding: 12px;
+  background: #161616;
+}
+
+.evassistant-game-won {
+  border-color: rgba(57, 144, 98, 0.8);
+  box-shadow: 0 0 10px rgba(57, 255, 136, 0.16);
+}
+
+.evassistant-game-lost {
+  border-color: rgba(194, 52, 52, 0.8);
+  box-shadow: 0 0 10px rgba(255, 70, 70, 0.14);
+}
+
+.evassistant-game-meta-compact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.evassistant-game-meta-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: #202020;
+}
+
+.evassistant-game-meta-item > span:first-child {
+  color: #999;
+}
+
+.evassistant-game-meta-item-full {
+  grid-column: 1 / -1;
+}
+
+.evassistant-game-players .evassistant-team-own td {
+  background: rgba(45, 108, 223, 0.19);
+  color: #b4d0ff;
+}
+
+.evassistant-game-players .evassistant-team-enemy td {
+  background: rgba(194, 52, 52, 0.19);
+  color: #ffc0c0;
+}
+
+.evassistant-game-players .evassistant-current-player td {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+}
+
+.evassistant-you-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #fff;
+  color: #111;
+  font-size: 9px;
+  vertical-align: middle;
+}
+
 .evassistant-error {
   color: #ff7777;
   white-space: pre-wrap;

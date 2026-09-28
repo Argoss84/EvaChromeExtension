@@ -37,7 +37,6 @@
             booking {
               id
               terrainId
-              playerCount
               seatCount
               status
               orderId
@@ -79,24 +78,72 @@
     }
   `;
 
-  const BOOKING_GROUP_UNIT_QUERY = `
-    query getBookingGroupUnitById($id: ID!) {
-      getBookingGroupUnitById(id: $id) {
+  const GAME_HISTORY_QUERY = `
+    query useAfterhGameHistoryPageLastOnly($userId: Int!, $seasonId: Int!) {
+      listLastAfterhGameHistoriesByUserAndSeason(
+        userId: $userId
+        seasonId: $seasonId
+        game: BattleArena
+      ) {
         id
-        seatCount
-        filledSeatCount
-        leftSeatCount
-        participants {
-          id
-          userId
-          paidSeatCount
-          level
-          username {
-            username
-            displayName
-            fullName
+        createdAt
+        data {
+          duration
+          teamOne {
+            score
+            name
+          }
+          teamTwo {
+            score
+            name
           }
         }
+        players {
+          userId
+          data {
+            niceName
+            rank
+            team
+            score
+            outcome
+            kills
+            deaths
+            assists
+          }
+        }
+        terrain {
+          location {
+            name
+          }
+        }
+        map {
+          name
+        }
+        mode {
+          identifier
+          category
+        }
+      }
+    }
+  `;
+
+  const LIST_SEASONS_QUERY = `
+    query listSeasons {
+      listSeasons {
+        nodes {
+          id
+          seasonNumber
+          name
+          active
+        }
+      }
+    }
+  `;
+
+  const GET_ME_QUERY = `
+    query me {
+      me {
+        id
       }
     }
   `;
@@ -366,7 +413,7 @@
     }
 
     if (activeTab === "history") {
-      return loadHistoryParticipants();
+      return loadGameHistory();
     }
 
     return loadUpcomingParticipants();
@@ -846,10 +893,17 @@
             },
             UPCOMING_PARTICIPANTS_QUERY
           );
+          const participants = participantData.listParticipants ?? [];
 
           return {
-            booking,
-            participants: participantData.listParticipants ?? []
+            booking: {
+              ...booking,
+              // `Booking.playerCount` n'est plus exposé par l'API. Pour les
+              // sessions à venir, le nombre affiché vient de la liste réelle
+              // des participants.
+              playerCount: participants.length || null
+            },
+            participants
           };
         })
       );
@@ -860,134 +914,86 @@
     }
   }
 
-  async function loadHistoryParticipants() {
+  async function loadGameHistory() {
     const content = document.getElementById("evassistant-content");
-    content.innerHTML = "Chargement complet de l'historique...";
+    content.innerHTML = "Chargement de l'historique des parties...";
 
     try {
-      const allBookings = await loadAllHistoryBookings();
+      const { userId, seasonIds } = await getGameHistoryContext();
+      const histories = await Promise.all(seasonIds.map(seasonId => graphql(
+        "useAfterhGameHistoryPageLastOnly",
+        { userId, seasonId },
+        GAME_HISTORY_QUERY
+      )));
 
-      const lastTenBookings = allBookings
-        .filter(booking => booking.bookingGroupUnitId)
-        .sort((a, b) => getBookingTime(b) - getBookingTime(a))
-        .slice(0, 10);
+      const gamesById = new Map();
+      histories
+        .flatMap(data => data?.listLastAfterhGameHistoriesByUserAndSeason ?? [])
+        .forEach(game => gamesById.set(String(game.id), game));
 
-      if (!lastTenBookings.length) {
-        content.innerHTML = "Aucune session dans l'historique.";
+      const games = [...gamesById.values()]
+        .sort((a, b) => {
+          const dateA = getGameHistoryTime(a);
+          const dateB = getGameHistoryTime(b);
+          if (dateA === dateB) return 0;
+          return dateA > dateB ? -1 : 1;
+        });
+
+      if (!games.length) {
+        content.innerHTML = "Aucune partie dans l'historique.";
         return;
       }
 
-      content.innerHTML = `Chargement des joueurs des ${lastTenBookings.length} dernières partie(s)...`;
-
-      const sessions = await Promise.all(
-        lastTenBookings.map(async booking => {
-          // `getBookingGroupUnitById` peut ne retourner que le groupe lié à notre ticket.
-          // On tente d'abord les participants de la session complète.
-          let participants = [];
-          let derivedPlayerCount = booking.playerCount;
-          let derivedSeatCount = booking.seatCount;
-
-          try {
-            const sessionParticipantsData = await graphql(
-              "listParticipants",
-              {
-                slotId: booking.slot.id,
-                terrainId: booking.terrainId
-              },
-              UPCOMING_PARTICIPANTS_QUERY
-            );
-
-            const sessionParticipants = sessionParticipantsData.listParticipants ?? [];
-
-            if (sessionParticipants.length) {
-              participants = sessionParticipants.map(p => ({
-                username: {
-                  displayName: p.isAnonymous ? "Anonyme" : (p.user?.displayName ?? "-"),
-                  username: p.isAnonymous ? "Anonyme" : (p.user?.displayName ?? "-"),
-                  fullName: "-"
-                },
-                level: p.experience?.level ?? "-",
-                paidSeatCount: 1
-              }));
-              derivedPlayerCount = Math.max(booking.playerCount ?? 0, sessionParticipants.length);
-            }
-          } catch (_) {
-            // Fallback: on garde la stratégie historique.
-          }
-
-          if (!participants.length) {
-            const groupUnitData = await graphql(
-              "getBookingGroupUnitById",
-              {
-                id: booking.bookingGroupUnitId
-              },
-              BOOKING_GROUP_UNIT_QUERY
-            );
-
-            const groupUnit = groupUnitData.getBookingGroupUnitById;
-            participants = groupUnit?.participants ?? [];
-            derivedPlayerCount = groupUnit?.filledSeatCount ?? booking.playerCount;
-            derivedSeatCount = groupUnit?.seatCount ?? booking.seatCount;
-          }
-
-          return {
-            booking: {
-              ...booking,
-              playerCount: derivedPlayerCount,
-              seatCount: derivedSeatCount
-            },
-            participants
-          };
-        })
-      );
-
-      renderHistorySessions(sessions);
+      renderGameHistorySessions(games, userId);
     } catch (error) {
       renderError(error);
     }
   }
 
-  async function loadAllHistoryBookings() {
-    const allBookings = [];
-    const limit = 50;
-
-    let page = 1;
-    let totalCount = null;
-
-    while (totalCount === null || allBookings.length < totalCount) {
-      const bookingData = await graphql(
-        "getBookingOrderList",
-        {
-          page: {
-            page,
-            limit
-          },
-          filters: {
-            bookingPassed: true
-          }
-        },
-        BOOKING_QUERY
-      );
-
-      const list = bookingData?.listBookingOrders;
-      const nodes = list?.nodes ?? [];
-
-      totalCount = list?.totalCount ?? allBookings.length;
-
-      const pageBookings = extractBookings({
-        listBookingOrders: {
-          nodes
-        }
-      });
-
-      allBookings.push(...pageBookings);
-
-      if (!nodes.length) break;
-
-      page += 1;
+  async function getGameHistoryContext() {
+    if (!cachedAccessToken) {
+      await refreshAccessToken();
     }
 
-    return allBookings;
+    let userId = getUserIdFromAccessToken(cachedAccessToken);
+    if (!userId) {
+      const meData = await graphql("me", {}, GET_ME_QUERY);
+      userId = Number(meData?.me?.id);
+    }
+
+    if (!userId || Number.isNaN(userId)) {
+      throw new Error("Impossible de récupérer ton identifiant EVA.");
+    }
+
+    const seasonIds = await fetchAfterhSeasonIds();
+    return { userId, seasonIds };
+  }
+
+  function getUserIdFromAccessToken(token) {
+    if (!token) return null;
+
+    try {
+      const payloadPart = token.split(".")[1];
+      if (!payloadPart) return null;
+
+      const payload = JSON.parse(atob(payloadPart.replace(/-/g, "+").replace(/_/g, "/")));
+      const value = payload.userId ?? payload.sub ?? payload.id;
+      if (value == null) return null;
+
+      const userId = Number(value);
+      return Number.isNaN(userId) ? null : userId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function fetchAfterhSeasonIds() {
+    const data = await graphql("listSeasons", {}, LIST_SEASONS_QUERY);
+    const seasonIds = [...new Set((data?.listSeasons?.nodes ?? [])
+      .map(season => Number(season.id))
+      .filter(seasonId => Number.isInteger(seasonId)))];
+
+    return seasonIds.length ? seasonIds : [8];
   }
 
   function extractBookings(data) {
@@ -1015,15 +1021,143 @@
     `).join("");
   }
 
-  function renderHistorySessions(sessions) {
+  function renderGameHistorySessions(games, currentUserId) {
     const content = document.getElementById("evassistant-content");
 
-    content.innerHTML = sessions.map(({ booking, participants }) => `
-      <section class="evassistant-session">
-        ${renderSessionHeader(booking)}
-        ${renderHistoryParticipantsTable(participants)}
-      </section>
-    `).join("");
+    content.innerHTML = games.map(game => {
+      const currentPlayer = (game.players ?? []).find(player => Number(player.userId) === Number(currentUserId));
+      const outcomeClass = currentPlayer?.data?.outcome === "Victory"
+        ? "evassistant-game-won"
+        : currentPlayer?.data?.outcome === "Defeat"
+          ? "evassistant-game-lost"
+          : "";
+
+      return `
+        <section class="evassistant-session evassistant-game-card ${outcomeClass}">
+          ${renderGameHistoryHeader(game, currentUserId)}
+          ${renderGamePlayersTable(game.players ?? [], currentUserId)}
+        </section>
+      `;
+    }).join("");
+  }
+
+  function renderGameHistoryHeader(game, currentUserId) {
+    const mapName = game.map?.name ?? "Carte inconnue";
+    const modeName = game.mode?.identifier ?? "-";
+    const locationName = game.terrain?.location?.name ?? "Lieu inconnu";
+    const date = formatGameDate(game.createdAt);
+    const duration = formatDuration(game.data?.duration);
+    const currentPlayer = (game.players ?? []).find(player => Number(player.userId) === Number(currentUserId));
+    const outcome = formatOutcome(currentPlayer?.data?.outcome);
+    const teamOne = game.data?.teamOne;
+    const teamTwo = game.data?.teamTwo;
+    const scoreLine = teamOne && teamTwo
+      ? `${escapeHtml(teamOne.name ?? "Équipe 1")} ${escapeHtml(teamOne.score ?? "-")} – ${escapeHtml(teamTwo.score ?? "-")} ${escapeHtml(teamTwo.name ?? "Équipe 2")}`
+      : null;
+
+    return `
+      <h3>${escapeHtml(mapName)} · ${escapeHtml(modeName)}</h3>
+      <div class="evassistant-game-meta-compact">
+        <div class="evassistant-game-meta-item"><span>Lieu</span><span>${escapeHtml(locationName)}</span></div>
+        <div class="evassistant-game-meta-item"><span>Date</span><span>${escapeHtml(date)}</span></div>
+        <div class="evassistant-game-meta-item"><span>Durée</span><span>${escapeHtml(duration)}</span></div>
+        ${scoreLine ? `<div class="evassistant-game-meta-item evassistant-game-meta-item-full"><span>Score équipes</span><span>${scoreLine}</span></div>` : ""}
+        <div class="evassistant-game-meta-item"><span>Mon résultat</span><span>${escapeHtml(outcome)}</span></div>
+        <div class="evassistant-game-meta-item"><span>Joueurs</span><span>${escapeHtml((game.players ?? []).length)}</span></div>
+      </div>
+    `;
+  }
+
+  function renderGamePlayersTable(players, currentUserId) {
+    if (!players.length) return `<p>Aucun joueur trouvé.</p>`;
+
+    const sortedPlayers = [...players].sort((a, b) => {
+      const scoreDiff = Number(b.data?.score ?? 0) - Number(a.data?.score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+
+      const killsDiff = Number(b.data?.kills ?? 0) - Number(a.data?.kills ?? 0);
+      if (killsDiff !== 0) return killsDiff;
+
+      return Number(a.data?.deaths ?? 0) - Number(b.data?.deaths ?? 0);
+    });
+    const currentPlayer = sortedPlayers.find(player => Number(player.userId) === Number(currentUserId));
+    const currentTeam = currentPlayer?.data?.team ?? null;
+
+    return `
+      <table class="evassistant-table evassistant-game-players">
+        <thead><tr><th>#</th><th>Joueur</th><th>Équipe</th><th>Score</th><th>Résultat</th><th>K / D / A</th></tr></thead>
+        <tbody>
+          ${sortedPlayers.map((player, index) => {
+            const isCurrentUser = Number(player.userId) === Number(currentUserId);
+            const rowClass = getGamePlayerRowClass(player, currentTeam, isCurrentUser);
+            return `<tr class="${rowClass}">
+              <td>${index + 1}</td>
+              <td>${escapeHtml(player.data?.niceName ?? "-")}${isCurrentUser ? ` <span class="evassistant-you-badge">TOI</span>` : ""}</td>
+              <td>${escapeHtml(player.data?.team ?? "-")}</td>
+              <td>${escapeHtml(player.data?.score ?? "-")}</td>
+              <td>${escapeHtml(formatOutcome(player.data?.outcome))}</td>
+              <td>${escapeHtml(player.data?.kills ?? "-")} / ${escapeHtml(player.data?.deaths ?? "-")} / ${escapeHtml(player.data?.assists ?? "-")}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function getGamePlayerRowClass(player, currentTeam, isCurrentUser) {
+    const playerTeam = normalizeTeam(player?.data?.team);
+    const myTeam = normalizeTeam(currentTeam);
+    let baseClass = "";
+
+    if (myTeam && playerTeam) {
+      baseClass = playerTeam === myTeam ? "evassistant-team-own" : "evassistant-team-enemy";
+    }
+
+    return isCurrentUser ? `${baseClass} evassistant-current-player`.trim() : baseClass;
+  }
+
+  function normalizeTeam(value) {
+    return value ? String(value).trim().toUpperCase() : "";
+  }
+
+  function getGameHistoryTime(game) {
+    const value = game?.createdAt;
+    if (value == null || value === "") return Number.NEGATIVE_INFINITY;
+
+    if (typeof value === "number" || /^\d+$/.test(String(value))) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return Number.NEGATIVE_INFINITY;
+      return Math.abs(numericValue) < 1e12 ? numericValue * 1000 : numericValue;
+    }
+
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+  }
+
+  function formatGameDate(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
+    }).format(date);
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds && seconds !== 0) return "-";
+    const totalSeconds = Number(seconds);
+    if (Number.isNaN(totalSeconds)) return "-";
+
+    const minutes = Math.floor(totalSeconds / 60);
+    return `${minutes}:${String(totalSeconds % 60).padStart(2, "0")}`;
+  }
+
+  function formatOutcome(outcome) {
+    if (!outcome) return "-";
+    if (outcome === "Victory") return "Victoire";
+    if (outcome === "Defeat") return "Défaite";
+    return outcome;
   }
 
   function renderSessionHeader(booking) {
@@ -1066,37 +1200,6 @@
               <td>${p.isAnonymous ? "Anonyme" : escapeHtml(p.user?.displayName ?? "-")}</td>
               <td>${escapeHtml(p.experience?.level ?? "-")}</td>
               <td>${escapeHtml(p.subscriptionPlan ?? "-")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
-  }
-
-  function renderHistoryParticipantsTable(participants) {
-    if (!participants.length) {
-      return `<p>Aucun participant trouvé.</p>`;
-    }
-
-    return `
-      <table class="evassistant-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Pseudo</th>
-            <th>Nom complet</th>
-            <th>Niveau</th>
-            <th>Places</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${participants.map((p, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${escapeHtml(p.username?.displayName ?? p.username?.username ?? "-")}</td>
-              <td>${escapeHtml(p.username?.fullName ?? "-")}</td>
-              <td>${escapeHtml(p.level ?? "-")}</td>
-              <td>${escapeHtml(p.paidSeatCount ?? "-")}</td>
             </tr>
           `).join("")}
         </tbody>

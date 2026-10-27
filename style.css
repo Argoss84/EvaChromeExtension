@@ -28,12 +28,6 @@ body {
   margin-bottom: 14px;
 }
 
-.evassistant-header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 #evassistant-refresh {
   background: #2d6cdf;
   color: white;
@@ -46,23 +40,6 @@ body {
 
 #evassistant-refresh:hover {
   background: #1f55b8;
-}
-
-#evassistant-toggle {
-  width: 34px;
-  height: 34px;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: #222;
-  color: #fff;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-}
-
-#evassistant-toggle:hover {
-  background: #2d6cdf;
-  border-color: #2d6cdf;
 }
 
 .evassistant-tabs {
@@ -319,34 +296,4 @@ body {
   border-radius: 6px;
   padding: 8px;
   font-size: 13px;
-}
-
-#evassistant-panel.collapsed {
-  width: 52px;
-  height: 52px;
-  max-height: 52px;
-  padding: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#evassistant-panel.collapsed #evassistant-title,
-#evassistant-panel.collapsed #evassistant-refresh,
-#evassistant-panel.collapsed .evassistant-tabs,
-#evassistant-panel.collapsed #evassistant-content {
-  display: none;
-}
-
-#evassistant-panel.collapsed .evassistant-header {
-  margin: 0;
-}
-
-#evassistant-panel.collapsed #evassistant-toggle {
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  margin: 0;
 }

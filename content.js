@@ -9,7 +9,6 @@
   let cachedAccessToken = null;
   let refreshAccessTokenPromise = null;
   let activeTab = "favorites";
-  let isPanelCollapsed = false;
   let activeEvaTabIdCache = null;
   let locationsCache = null;
   const locationGamesCache = new Map();
@@ -48,6 +47,7 @@
                 endTime
               }
               game {
+                id
                 name
                 identifier
               }
@@ -64,8 +64,8 @@
   `;
 
   const UPCOMING_PARTICIPANTS_QUERY = `
-    query listParticipants($slotId: String!, $terrainId: Int!) {
-      listParticipants(slotId: $slotId, terrainId: $terrainId) {
+    query listParticipants($slotId: String!, $terrainId: Int!, $gameId: Int!) {
+      listParticipants(slotId: $slotId, terrainId: $terrainId, gameId: $gameId) {
         user {
           displayName
         }
@@ -193,9 +193,6 @@
     panel.innerHTML = `
       <div class="evassistant-header">
         <strong id="evassistant-title">Evassistant</strong>
-        <div class="evassistant-header-actions">
-          <button id="evassistant-toggle" title="Réduire le panneau" aria-label="Réduire le panneau">—</button>
-        </div>
       </div>
 
       <div class="evassistant-tabs">
@@ -208,12 +205,6 @@
     `;
 
     document.body.appendChild(panel);
-
-    document
-      .getElementById("evassistant-toggle")
-      .addEventListener("click", () => {
-        setPanelCollapsed(!isPanelCollapsed);
-      });
 
     document.querySelectorAll(".evassistant-tab").forEach(button => {
       button.addEventListener("click", () => {
@@ -235,21 +226,7 @@
       .getElementById("evassistant-content")
       .addEventListener("change", handleContentChange);
 
-    setPanelCollapsed(false);
     loadCurrentTab();
-  }
-
-  function setPanelCollapsed(collapsed) {
-    isPanelCollapsed = collapsed;
-    const panel = document.getElementById(PANEL_ID);
-    const toggleButton = document.getElementById("evassistant-toggle");
-
-    if (!panel || !toggleButton) return;
-
-    panel.classList.toggle("collapsed", isPanelCollapsed);
-    toggleButton.textContent = isPanelCollapsed ? "☰" : "—";
-    toggleButton.title = isPanelCollapsed ? "Ouvrir le panneau" : "Réduire le panneau";
-    toggleButton.setAttribute("aria-label", toggleButton.title);
   }
 
   async function refreshAccessToken() {
@@ -265,10 +242,7 @@
       });
 
       if (!ok || json?.errors?.length || !json?.data?.refreshToken?.accessToken) {
-        throw new Error(
-          `Impossible de rafraîchir le token (HTTP ${status}) :\n` +
-          JSON.stringify(json?.errors ?? json ?? {}, null, 2)
-        );
+        throw createApiError("refreshToken", status, json);
       }
 
       cachedAccessToken = json.data.refreshToken.accessToken;
@@ -283,38 +257,21 @@
   }
 
   async function graphql(operationName, variables, query) {
-    if (!cachedAccessToken) {
-      try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!cachedAccessToken) {
         await refreshAccessToken();
-      } catch (_) {
-        throw new Error(AUTH_REQUIRED_MESSAGE);
       }
-    }
 
-    let json = await graphqlRequest(operationName, variables, query);
-
-    const isUnauthenticated =
-      json.errors?.some(e => e.extensions?.code === "UNAUTHENTICATED");
-
-    if (isUnauthenticated) {
-      cachedAccessToken = null;
       try {
-        await refreshAccessToken();
-      } catch (_) {
-        throw new Error(AUTH_REQUIRED_MESSAGE);
+        const json = await graphqlRequest(operationName, variables, query);
+        return json.data;
+      } catch (error) {
+        if (!isAuthError(error)) throw error;
+
+        cachedAccessToken = null;
+        if (attempt === 1) throw new Error(AUTH_REQUIRED_MESSAGE);
       }
-      json = await graphqlRequest(operationName, variables, query);
     }
-
-    if (json.errors?.length) {
-      if (isAuthError(json.errors)) {
-        throw new Error(AUTH_REQUIRED_MESSAGE);
-      }
-
-      throw new Error(JSON.stringify(json.errors, null, 2));
-    }
-
-    return json.data;
   }
 
   async function graphqlRequest(operationName, variables, query) {
@@ -325,8 +282,8 @@
       accessToken: cachedAccessToken
     });
 
-    if (!ok) {
-      throw new Error(`HTTP ${status}\n${JSON.stringify(json ?? {}, null, 2)}`);
+    if (!ok || json?.errors?.length) {
+      throw createApiError(operationName, status, json);
     }
 
     return json;
@@ -339,20 +296,32 @@
       query
     });
 
-    if (!ok) {
-      throw new Error(`HTTP ${status}\n${JSON.stringify(json ?? {}, null, 2)}`);
-    }
-
-    if (json.errors?.length) {
-      throw new Error(JSON.stringify(json.errors, null, 2));
+    if (!ok || json?.errors?.length) {
+      throw createApiError(operationName, status, json);
     }
 
     return json.data;
   }
 
+  function createApiError(operationName, status, json) {
+    const error = new Error(
+      `Échec de ${operationName} (HTTP ${status})\n${JSON.stringify(json ?? {}, null, 2)}`
+    );
+    error.status = status;
+    error.errors = json?.errors ?? [];
+    return error;
+  }
+
   async function requestEvaApiFromActiveTab(payload) {
     const tabId = await getActiveEvaTabId();
     await ensureBridgeInjected(tabId);
+
+    if (payload.operationName === "listParticipants") {
+      payload = {
+        ...payload,
+        recaptchaToken: await getParticipantsVerificationToken(tabId)
+      };
+    }
 
     return new Promise((resolve, reject) => {
       chrome.tabs.sendMessage(tabId, { type: "evassistant-api-request", payload }, response => {
@@ -404,6 +373,47 @@
       });
     } catch (error) {
       throw new Error(`Impossible d'initialiser Evassistant sur l'onglet EVA: ${error?.message ?? error}`);
+    }
+  }
+
+  async function getParticipantsVerificationToken(tabId) {
+    const verificationMessage = "La vérification de sécurité EVA n'a pas abouti. Recharge l'onglet EVA puis réessaie.";
+
+    try {
+      // EVA protège listParticipants avec l'action reCAPTCHA get_game_session.
+      // Son SDK est accessible uniquement dans le contexte principal du site.
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN",
+        func: async () => {
+          const script = document.querySelector(
+            'script[src^="https://www.google.com/recaptcha/api.js"], script[src^="https://www.recaptcha.net/recaptcha/api.js"]'
+          );
+          const siteKey = script && new URL(script.src).searchParams.get("render");
+          const recaptcha = window.grecaptcha;
+          if (!siteKey || siteKey === "explicit" || !recaptcha?.ready) return null;
+
+          let timeoutId;
+          try {
+            return await new Promise((resolve, reject) => {
+              timeoutId = setTimeout(() => reject(new Error("Vérification EVA expirée")), 15000);
+              recaptcha.ready(() => {
+                Promise.resolve()
+                  .then(() => recaptcha.execute(siteKey, { action: "get_game_session" }))
+                  .then(resolve, reject);
+              });
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+      });
+
+      const token = results?.[0]?.result;
+      if (typeof token !== "string" || !token) throw new Error(verificationMessage);
+      return token;
+    } catch (_) {
+      throw new Error(verificationMessage);
     }
   }
 
@@ -885,15 +895,24 @@
 
       const sessions = await Promise.all(
         bookings.map(async booking => {
-          const participantData = await graphql(
-            "listParticipants",
-            {
-              slotId: booking.slot.id,
-              terrainId: booking.terrainId
-            },
-            UPCOMING_PARTICIPANTS_QUERY
-          );
-          const participants = participantData.listParticipants ?? [];
+          let participants = [];
+          let participantsError = null;
+
+          try {
+            const participantData = await graphql(
+              "listParticipants",
+              {
+                slotId: booking.slot.id,
+                terrainId: booking.terrainId,
+                gameId: booking.game.id
+              },
+              UPCOMING_PARTICIPANTS_QUERY
+            );
+            participants = participantData.listParticipants ?? [];
+          } catch (error) {
+            if (isAuthError(error)) throw error;
+            participantsError = error.message;
+          }
 
           return {
             booking: {
@@ -903,7 +922,8 @@
               // des participants.
               playerCount: participants.length || null
             },
-            participants
+            participants,
+            participantsError
           };
         })
       );
@@ -1013,10 +1033,12 @@
   function renderUpcomingSessions(sessions) {
     const content = document.getElementById("evassistant-content");
 
-    content.innerHTML = sessions.map(({ booking, participants }) => `
+    content.innerHTML = sessions.map(({ booking, participants, participantsError }) => `
       <section class="evassistant-session">
         ${renderSessionHeader(booking)}
-        ${renderUpcomingParticipantsTable(participants)}
+        ${participantsError
+          ? `<pre class="evassistant-error">Impossible de charger les participants :\n${escapeHtml(participantsError)}</pre>`
+          : renderUpcomingParticipantsTable(participants)}
       </section>
     `).join("");
   }
@@ -1232,7 +1254,7 @@
   function renderError(error) {
     const content = document.getElementById("evassistant-content");
 
-    if (isAuthError(error?.message)) {
+    if (isAuthError(error)) {
       content.innerHTML = `<p class="evassistant-auth-required">${escapeHtml(AUTH_REQUIRED_MESSAGE)}</p>`;
       return;
     }
@@ -1247,11 +1269,14 @@
 
     if (!value) return false;
 
-    const text = typeof value === "string"
-      ? value
-      : JSON.stringify(value);
+    if (typeof value === "object") {
+      return value.status === 401
+        || value.extensions?.code === "UNAUTHENTICATED"
+        || isAuthError(value.errors)
+        || isAuthError(value.message);
+    }
 
-    return /UNAUTHENTICATED|Forbidder error|AUTH_REQUIRED_MESSAGE|401/i.test(text);
+    return value === AUTH_REQUIRED_MESSAGE || /^HTTP 401(?:\s|$)/i.test(String(value));
   }
 
   function escapeHtml(value) {

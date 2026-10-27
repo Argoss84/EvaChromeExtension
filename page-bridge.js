@@ -12,7 +12,7 @@
       return false;
     }
 
-    const { operationName, variables, query, accessToken } = message.payload ?? {};
+    const { operationName, variables, query, accessToken, recaptchaToken } = message.payload ?? {};
 
     fetch(API_URL, {
       method: "POST",
@@ -21,7 +21,10 @@
         "accept": "*/*",
         "content-type": "application/json",
         "eva-client-app-name": "spa-app",
-        ...(accessToken ? { "authorization": `Bearer ${accessToken}` } : {})
+        ...(accessToken ? { "authorization": `Bearer ${accessToken}` } : {}),
+        ...(operationName === "listParticipants" && recaptchaToken
+          ? { "x-recaptcha-token": recaptchaToken }
+          : {})
       },
       body: JSON.stringify({
         operationName,

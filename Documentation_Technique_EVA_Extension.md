@@ -100,6 +100,7 @@ Champs utilisés :
 -   booking.slot.localDatetime
 -   booking.slot.startTime
 -   booking.slot.endTime
+-   booking.game.id
 -   booking.game.name
 -   booking.location.name
 
@@ -114,9 +115,25 @@ Variables :
 ``` json
 {
   "slotId": "...",
-  "terrainId": 156
+  "terrainId": 156,
+  "gameId": 1
 }
 ```
+
+`gameId` correspond à `booking.game.id` de la réservation et est obligatoire
+(`Int!`).
+
+Cette requête exige également le header `x-recaptcha-token`. L'extension
+obtient un jeton pour l'action `get_game_session` auprès du SDK reCAPTCHA
+déjà chargé sur l'onglet EVA, via `chrome.scripting` dans le contexte `MAIN`.
+Un nouveau jeton est demandé pour chaque appel, y compris après un
+renouvellement de l'access token. Aucun jeton n'est conservé sur disque.
+
+Un refus d'accès ou un échec de vérification ne signifie pas que la session
+EVA est déconnectée : les réservations restent affichées avec l'erreur de
+participants concernée. Seuls un statut HTTP 401 ou le code GraphQL
+`UNAUTHENTICATED` déclenchent le renouvellement du token et, si nécessaire,
+le message de connexion.
 
 Champs :
 
@@ -155,7 +172,7 @@ Champs :
 2.  getBookingOrderList(bookingPassed=false)
 3.  trier par `slot.localDatetime`
 4.  pour chaque réservation :
-    -   listParticipants(slotId, terrainId)
+    -   listParticipants(slotId, terrainId, gameId)
 5.  affichage
 
 ### Historique
@@ -194,6 +211,13 @@ Bouton :
 -   renderHistorySessions()
 
 ## Déploiement
+
+Vérifications locales des appels API et des erreurs (avec API et reCAPTCHA
+simulés) :
+
+``` powershell
+node --test scripts/content.test.cjs
+```
 
 Chargement local :
 

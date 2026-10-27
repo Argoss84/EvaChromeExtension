@@ -27,12 +27,24 @@ Ne pas inclure : `.git`, `dist/`, `scripts/`, `EvaEvolved.png`, documentation in
 powershell -ExecutionPolicy Bypass -File .\scripts\package-extension.ps1
 ```
 
-Le fichier `dist/evassistant.zip` sera généré.
+Le script génère `dist/evassistant.zip` ainsi qu'un dossier
+`dist/store-<version>/` contenant :
+
+- `evassistant-<version>.zip` : archive à téléverser sur le store ;
+- `store-listing.txt` : description de l'extension ;
+- `privacy-policy.html` : politique de confidentialité à publier ;
+- `icon128.png` : icône de l'extension ;
+- `guide-publication.md` et `notes-version.md` : instructions et changements ;
+- `SHA256SUMS.txt` : empreinte SHA-256 de l'archive.
+
+Le dossier `dist/` est généré localement et exclu de Git.
 
 ## Étapes de publication
 
 1. Ouvrir le [Developer Dashboard](https://chrome.google.com/webstore/devconsole).
-2. **Nouvel élément** > charger `dist/evassistant.zip`.
+2. Ouvrir la fiche de l'extension existante et téléverser le nouveau package
+   `evassistant-<version>.zip` depuis le dossier généré. Pour une première
+   publication, choisir **Nouvel élément**.
 3. Renseigner la fiche store :
    - **Nom** : Evassistant
    - **Description courte** : Participants EVA et favoris de réservation avec Evassistant.
@@ -44,7 +56,8 @@ Le fichier `dist/evassistant.zip` sera généré.
 6. Indiquer l'URL de `privacy-policy.html` hébergée publiquement.
 7. Déclarer les permissions :
    - `activeTab` : accès temporaire à l'onglet EVA quand l'utilisateur ouvre Evassistant.
-   - `scripting` : relayer les appels API via la session EVA connectée.
+   - `scripting` : relayer les appels API via la session EVA connectée et
+     utiliser sa vérification de sécurité pour charger les participants.
 8. Soumettre pour examen.
 
 ## Vérifications avant soumission
@@ -55,3 +68,5 @@ Le fichier `dist/evassistant.zip` sera généré.
 - [ ] Onglets À venir / Historique : chargement OK.
 - [ ] Aucune erreur dans la console de la popup.
 - [ ] Version incrémentée dans `manifest.json`.
+- [ ] Politique de confidentialité publiée à une URL accessible et mise à jour sur la fiche store.
+- [ ] Au moins une capture d'écran de l'extension ajoutée à la fiche store.

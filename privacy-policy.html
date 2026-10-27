@@ -23,7 +23,7 @@
   <body>
     <h1>Politique de confidentialité</h1>
     <p><strong>Extension :</strong> Evassistant</p>
-    <p><strong>Dernière mise à jour :</strong> 2 juillet 2026</p>
+    <p><strong>Dernière mise à jour :</strong> 27 octobre 2026</p>
 
     <h2>1. Objet</h2>
     <p>
@@ -37,30 +37,44 @@
     <ul>
       <li>favoris de réservation (centre, jeu, nombre de joueurs, libellé) ;</li>
       <li>informations de session EVA nécessaires à l'affichage des participants ;</li>
-      <li>jeton d'accès temporaire obtenu via votre session EVA déjà connectée.</li>
+      <li>jeton d'accès temporaire obtenu via votre session EVA déjà connectée ;</li>
+      <li>jeton de vérification de sécurité reCAPTCHA nécessaire à l'affichage des participants.</li>
     </ul>
 
     <h2>3. Stockage</h2>
     <p>
       Les favoris sont stockés localement dans le navigateur (stockage de la popup de l'extension)
       sur votre appareil. Aucune base de données distante dédiée à l'extension n'est utilisée.
+      Les jetons d'accès et de vérification ne sont pas enregistrés sur disque par l'extension.
     </p>
 
     <h2>4. Communications réseau</h2>
     <p>
-      L'extension communique uniquement avec les services EVA (<code>app.eva.gg</code>,
+      L'extension communique avec les services EVA (<code>app.eva.gg</code>,
       <code>www.eva.gg</code>, <code>api.eva.gg</code>) pour récupérer les informations
       nécessaires à son fonctionnement.
+    </p>
+    <p>
+      Pour consulter les participants, l'extension utilise également la vérification Google reCAPTCHA
+      déjà chargée sur le site EVA. Le SDK Google effectue cette vérification et le jeton obtenu est
+      transmis à l'API EVA. Ce service est soumis à la
+      <a href="https://policies.google.com/privacy">politique de confidentialité de Google</a> et aux
+      <a href="https://policies.google.com/terms">conditions d'utilisation de Google</a>.
     </p>
 
     <h2>5. Permissions</h2>
     <ul>
       <li><strong>activeTab</strong> : accéder temporairement à l'onglet EVA actif lorsque vous ouvrez Evassistant ;</li>
-      <li><strong>scripting</strong> : relayer les requêtes API via votre session EVA déjà connectée.</li>
+      <li><strong>scripting</strong> : relayer les requêtes API via votre session EVA déjà connectée
+        et utiliser la vérification de sécurité déjà chargée sur le site EVA.</li>
     </ul>
 
     <h2>6. Partage des données</h2>
-    <p>Aucune donnée n'est partagée avec des annonceurs ou des services tiers.</p>
+    <p>
+      Les échanges nécessaires au fonctionnement de l'extension sont limités aux services EVA
+      et à la vérification de sécurité Google reCAPTCHA décrite ci-dessus.
+      L'extension ne vend aucune donnée et ne transmet aucune donnée à des annonceurs.
+    </p>
 
     <h2>7. Suppression des données</h2>
     <p>
